@@ -5,12 +5,10 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider, useAuth } from './AuthContext'
 import { apiFetch } from '../api/client'
 
-vi.mock('../api/client', () => ({
-  apiFetch: vi.fn(),
-  setToken: vi.fn(),
-  clearToken: vi.fn(),
-  getToken: vi.fn(() => null),
-}))
+vi.mock('../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/client')>()
+  return { ...actual, apiFetch: vi.fn() }
+})
 
 const mockedFetch = vi.mocked(apiFetch)
 

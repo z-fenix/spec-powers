@@ -38,7 +38,7 @@ describe('apiFetch', () => {
       new Response(JSON.stringify({ error: { code: 'invalid_request', message: 'bad input' } }), { status: 400 })
     ))
 
-    const err = await apiFetch('/auth/login', { method: 'POST', body: {} }).catch((e) => e)
+    const err = (await apiFetch('/auth/login', { method: 'POST', body: {} }).catch((e) => e)) as ApiError
     expect(err).toBeInstanceOf(ApiError)
     expect(err.status).toBe(400)
     expect(err.code).toBe('invalid_request')
@@ -53,7 +53,7 @@ describe('apiFetch', () => {
       new Response(JSON.stringify({ error: { code: 'unauthorized', message: 'expired' } }), { status: 401 })
     ))
 
-    const err = await apiFetch('/me').catch((e) => e)
+    const err = (await apiFetch('/me').catch((e) => e)) as ApiError
     expect(err.status).toBe(401)
     expect(localStorage.getItem('sp_token')).toBeNull()
     expect(listener).toHaveBeenCalledTimes(1)

@@ -39,10 +39,7 @@ func NewRouter(deps Deps) http.Handler {
 			JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 		})
 		if deps.Auth != nil {
-			r.Mount("/auth", http.StripPrefix("/api/v1/auth", deps.Auth))
-			r.Get("/me", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				deps.Auth.ServeHTTP(w, r)
-			}))
+			r.Mount("/auth", deps.Auth)
 		}
 		if deps.Project != nil {
 			r.Mount("/projects", http.StripPrefix("/api/v1/projects", deps.Project))

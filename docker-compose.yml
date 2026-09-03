@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: specpowers
+      POSTGRES_PASSWORD: specpowers
+      POSTGRES_DB: specpowers
+    ports:
+      - "5432:5432"
+    volumes:
+      - specpowers_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U specpowers -d specpowers"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  specpowers_pgdata:

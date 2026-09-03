@@ -9,6 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"specpowers/backend/internal/store"
 )
 
 //go:embed migrations/*.sql
@@ -57,7 +59,7 @@ func (m migrationDB) QueryVersion(ctx context.Context, version string) (bool, er
 	return applied, err
 }
 
-var ErrNotFound = errors.New("not found")
+var ErrNotFound = store.ErrNotFound
 
 func IsConflict(err error) bool {
 	var pgErr *pgconn.PgError

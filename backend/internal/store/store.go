@@ -2,9 +2,13 @@ package store
 
 import (
 	"context"
+	"errors"
 
 	"specpowers/backend/internal/domain"
 )
+
+// ErrNotFound is returned by stores when the requested row does not exist.
+var ErrNotFound = errors.New("not found")
 
 // Role IDs as seeded by migration 0001_init.sql.
 const (

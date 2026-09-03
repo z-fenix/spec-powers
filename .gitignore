@@ -1,0 +1,6 @@
+.agent_context/
+.multica/
+.claude/
+node_modules/
+dist/
+*.exe

@@ -17,11 +17,11 @@ order: 2
 ## 步骤
 
 1. **specs（需求规格）**：把 proposal 选定的方案拆成可验证的需求条目，每条写清验收标准。写入 `sp artifact write specs --file specs.md`，然后 `sp handoff`。
-2. **design（技术设计）**：写技术设计——涉及的模块与文件、数据模型与迁移、接口契约、测试策略（测试先行）。写入 `sp artifact write design --file design.md`，然后 `sp handoff`。
-3. **tasks（任务分解）**：把工作拆成可独立交付的任务，按依赖排进 stage（1 最早）。tasks 产物必须是包含 ```json 围栏块的 markdown，格式：
+2. **design（技术设计）**：写技术设计——涉及的模块与文件、数据模型与迁移、接口契约。测试策略必须按 **TDD（测试驱动开发）** 严格限定：逐模块列出要先写的失败测试（先写测试、运行确认失败、再实现到通过），禁止"先实现后补测试"。写入 `sp artifact write design --file design.md`，然后 `sp handoff`。
+3. **tasks（任务分解）**：把工作拆成可独立交付的任务，按依赖排进 stage（1 最早）。每个任务的 description 必须写明：TDD 约束（先写失败测试并确认失败，再写实现，直到测试通过）与验证命令（如 `go test ./...`）。tasks 产物必须是包含 ```json 围栏块的 markdown，格式：
 
    ```json
-   {"tasks":[{"title":"...","description":"...","stage":1}]}
+   {"tasks":[{"title":"...","description":"...（含 TDD 约束与验证命令）","stage":1}]}
    ```
 
    写入 `sp artifact write tasks --file tasks.md`，服务端会解析该 JSON 并为每个任务创建对应 stage 的子 issue，并写入 task mappings。

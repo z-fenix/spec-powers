@@ -157,3 +157,25 @@ func TestNextForChange(t *testing.T) {
 		}
 	}
 }
+
+// The build/execution phase must be strictly TDD: the plan skill has to
+// bake test-first requirements into design/tasks, and the execution skill
+// has to enforce them when dispatching subagents.
+func TestExecutionSkillsMandateTDD(t *testing.T) {
+	reg, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry: %v", err)
+	}
+	for _, key := range []string{KeyWritePlan, KeySubagentDrivenDevelopment} {
+		s, ok := reg.Get(key)
+		if !ok {
+			t.Fatalf("skill %q missing", key)
+		}
+		if !strings.Contains(s.Instructions, "TDD") {
+			t.Errorf("skill %q instructions do not mandate TDD", key)
+		}
+		if !strings.Contains(s.Instructions, "失败") {
+			t.Errorf("skill %q instructions do not mention failing tests first", key)
+		}
+	}
+}

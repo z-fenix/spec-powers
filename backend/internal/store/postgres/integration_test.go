@@ -45,7 +45,7 @@ func TestMigrateIntegration(t *testing.T) {
 		t.Fatalf("second migrate (must be idempotent): %v", err)
 	}
 
-	for _, table := range []string{"users", "workspaces", "members", "roles", "projects", "project_members"} {
+	for _, table := range []string{"users", "workspaces", "members", "roles", "projects", "project_members", "project_resources", "project_contexts"} {
 		var n int
 		if err := pool.QueryRow(ctx, "SELECT count(*) FROM information_schema.tables WHERE table_name=$1", table).Scan(&n); err != nil {
 			t.Fatalf("query tables: %v", err)
@@ -135,7 +135,7 @@ func TestProjectStoreIntegration(t *testing.T) {
 		t.Fatalf("workspaces for mate = %v, %v", ids, err)
 	}
 
-	p, err := projects.CreateProject(ctx, ws.ID, "Alpha", owner.ID)
+	p, err := projects.CreateProject(ctx, ws.ID, "Alpha", "first", owner.ID)
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -160,5 +160,78 @@ func TestProjectStoreIntegration(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].Name != "Alpha" {
 		t.Errorf("list = %+v", list)
+	}
+}
+
+func TestProjectDomainIntegration(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	if err := Migrate(ctx, NewMigrationDB(pool), MigrationsFS); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	users := NewUserStore(pool)
+	workspaces := NewWorkspaceStore(pool)
+	projects := NewProjectStore(pool)
+
+	owner, err := users.CreateUser(ctx, "pd-owner@example.com", "h", "Owner")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	ws, err := workspaces.CreateWorkspace(ctx, "WS", owner.ID)
+	if err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	p, err := projects.CreateProject(ctx, ws.ID, "Alpha", "desc", owner.ID)
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	updated, err := projects.UpdateProject(ctx, p.ID, "Beta", "desc2")
+	if err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+	if updated.Name != "Beta" || updated.Description != "desc2" || updated.Archived {
+		t.Errorf("updated = %+v", updated)
+	}
+
+	archived, err := projects.SetProjectArchived(ctx, p.ID, true)
+	if err != nil {
+		t.Fatalf("archive project: %v", err)
+	}
+	if !archived.Archived {
+		t.Error("archived flag not set")
+	}
+
+	r, err := projects.AddProjectResource(ctx, p.ID, "github_repo", "main", "octo/hello")
+	if err != nil {
+		t.Fatalf("add resource: %v", err)
+	}
+	if _, err := projects.AddProjectResource(ctx, p.ID, "github_repo", "dup", "octo/hello"); err != store.ErrConflict {
+		t.Errorf("duplicate resource error = %v, want ErrConflict", err)
+	}
+	resources, err := projects.ListProjectResources(ctx, p.ID)
+	if err != nil || len(resources) != 1 || resources[0].ID != r.ID {
+		t.Errorf("resources = %+v, %v", resources, err)
+	}
+	if err := projects.DeleteProjectResource(ctx, p.ID, r.ID); err != nil {
+		t.Fatalf("delete resource: %v", err)
+	}
+	if err := projects.DeleteProjectResource(ctx, p.ID, r.ID); err != store.ErrNotFound {
+		t.Errorf("delete again error = %v, want ErrNotFound", err)
+	}
+
+	if _, err := projects.GetProjectContext(ctx, p.ID); err != store.ErrNotFound {
+		t.Errorf("missing context error = %v, want ErrNotFound", err)
+	}
+	written, err := projects.SetProjectContext(ctx, p.ID, "notes")
+	if err != nil {
+		t.Fatalf("set context: %v", err)
+	}
+	if written.Content != "notes" {
+		t.Errorf("written = %+v", written)
+	}
+	got, err := projects.GetProjectContext(ctx, p.ID)
+	if err != nil || got.Content != "notes" {
+		t.Errorf("context = %+v, %v", got, err)
 	}
 }

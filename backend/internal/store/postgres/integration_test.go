@@ -2,8 +2,11 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -11,7 +14,8 @@ import (
 )
 
 // integrationDSN returns the DSN for real-Postgres integration tests, or ""
-// when they should be skipped. Set SP_TEST_PG_DSN to run them:
+// when they should be skipped. Set SP_TEST_PG_DSN to run them against a
+// DISPOSABLE database (tests seed fixed rows and do not fully clean up):
 //
 //	SP_TEST_PG_DSN=postgres://specpowers:specpowers@localhost:5432/specpowers_test?sslmode=disable go test ./...
 func integrationDSN(t *testing.T) string {
@@ -33,6 +37,12 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
+// uniqueEmail returns a run-unique email so tests stay re-runnable against
+// a database that may still hold users from an earlier run.
+func uniqueEmail(local string) string {
+	return fmt.Sprintf("%s-%d@example.com", local, time.Now().UnixNano())
+}
+
 func TestMigrateIntegration(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
@@ -44,7 +54,6 @@ func TestMigrateIntegration(t *testing.T) {
 	if err := Migrate(ctx, db, MigrationsFS); err != nil {
 		t.Fatalf("second migrate (must be idempotent): %v", err)
 	}
-
 	for _, table := range []string{"users", "workspaces", "members", "roles", "projects", "project_members", "project_resources", "project_contexts", "issues", "issue_wakeups", "issue_comments", "issue_attachments", "issue_metadata", "changes", "artifacts", "task_mappings", "agents", "runs", "run_logs"} {
 		var n int
 		if err := pool.QueryRow(ctx, "SELECT count(*) FROM information_schema.tables WHERE table_name=$1", table).Scan(&n); err != nil {
@@ -64,6 +73,43 @@ func TestMigrateIntegration(t *testing.T) {
 	}
 }
 
+func TestMigrateWaitsForHeldLock(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	if err := Migrate(ctx, NewMigrationDB(pool), MigrationsFS); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	// Hold the migration lock the way a second concurrent process would.
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock(hashtext($1))", "specpowers-migrations"); err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+	defer func() {
+		_, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock(hashtext($1))", "specpowers-migrations")
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Migrate(ctx, NewMigrationDB(pool), MigrationsFS)
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("Migrate completed while another process held the lock: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_unlock(hashtext($1))", "specpowers-migrations"); err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("migrate after release: %v", err)
+	}
+}
+
 func TestUserStoreIntegration(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
@@ -72,15 +118,16 @@ func TestUserStoreIntegration(t *testing.T) {
 	}
 	users := NewUserStore(pool)
 
-	u, err := users.CreateUser(ctx, "it-user@example.com", "hash-x", "IT User")
+	email := uniqueEmail("it-user")
+	u, err := users.CreateUser(ctx, email, "hash-x", "IT User")
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	if u.ID == "" || u.Email != "it-user@example.com" {
+	if u.ID == "" || u.Email != email {
 		t.Errorf("created user = %+v", u)
 	}
 
-	got, err := users.GetUserByEmail(ctx, "IT-USER@EXAMPLE.COM")
+	got, err := users.GetUserByEmail(ctx, strings.ToUpper(email))
 	if err != nil {
 		t.Fatalf("get by email (citext): %v", err)
 	}
@@ -88,7 +135,7 @@ func TestUserStoreIntegration(t *testing.T) {
 		t.Errorf("email lookup id = %s, want %s", got.ID, u.ID)
 	}
 
-	if _, err := users.CreateUser(ctx, "it-user@example.com", "hash-y", "Dup"); !IsConflict(err) {
+	if _, err := users.CreateUser(ctx, email, "hash-y", "Dup"); !IsConflict(err) {
 		t.Errorf("duplicate email error = %v, want conflict", err)
 	}
 
@@ -112,11 +159,11 @@ func TestProjectStoreIntegration(t *testing.T) {
 	members := NewMemberStore(pool)
 	projects := NewProjectStore(pool)
 
-	owner, err := users.CreateUser(ctx, "proj-owner@example.com", "h", "Owner")
+	owner, err := users.CreateUser(ctx, uniqueEmail("proj-owner"), "h", "Owner")
 	if err != nil {
 		t.Fatalf("create owner: %v", err)
 	}
-	mate, err := users.CreateUser(ctx, "proj-mate@example.com", "h", "Mate")
+	mate, err := users.CreateUser(ctx, uniqueEmail("proj-mate"), "h", "Mate")
 	if err != nil {
 		t.Fatalf("create mate: %v", err)
 	}
@@ -173,7 +220,7 @@ func TestProjectDomainIntegration(t *testing.T) {
 	workspaces := NewWorkspaceStore(pool)
 	projects := NewProjectStore(pool)
 
-	owner, err := users.CreateUser(ctx, "pd-owner@example.com", "h", "Owner")
+	owner, err := users.CreateUser(ctx, uniqueEmail("pd-owner"), "h", "Owner")
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}

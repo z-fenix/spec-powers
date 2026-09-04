@@ -38,14 +38,34 @@ func scanIssue(row pgx.Row) (*domain.Issue, error) {
 	return i, nil
 }
 
+// normalizeForWrite applies the table's DEFAULT semantics: empty status /
+// priority fall back to the schema defaults and a nil labels slice encodes
+// as an empty array instead of NULL (labels is NOT NULL).
+func normalizeForWrite(i *domain.Issue) (status, priority string, labels []string) {
+	status = i.Status
+	if status == "" {
+		status = "todo"
+	}
+	priority = i.Priority
+	if priority == "" {
+		priority = "none"
+	}
+	labels = i.Labels
+	if labels == nil {
+		labels = []string{}
+	}
+	return status, priority, labels
+}
+
 func (s *IssueStore) CreateIssue(ctx context.Context, i *domain.Issue) (*domain.Issue, error) {
+	status, priority, labels := normalizeForWrite(i)
 	return scanIssue(s.pool.QueryRow(ctx, `
 		INSERT INTO issues (project_id, parent_id, title, description, status, priority,
 			assignee_id, due_date, labels, stage, position, created_by)
 		VALUES ($1, NULLIF($2, '')::uuid, $3, $4, $5, $6, NULLIF($7, '')::uuid, $8, $9, $10, $11, $12)
 		RETURNING `+issueColumns,
-		i.ProjectID, i.ParentID, i.Title, i.Description, i.Status, i.Priority,
-		i.AssigneeID, i.DueDate, i.Labels, i.Stage, i.Position, i.CreatedBy))
+		i.ProjectID, i.ParentID, i.Title, i.Description, status, priority,
+		i.AssigneeID, i.DueDate, labels, i.Stage, i.Position, i.CreatedBy))
 }
 
 func (s *IssueStore) GetIssue(ctx context.Context, id string) (*domain.Issue, error) {
@@ -55,6 +75,7 @@ func (s *IssueStore) GetIssue(ctx context.Context, id string) (*domain.Issue, er
 }
 
 func (s *IssueStore) UpdateIssue(ctx context.Context, i *domain.Issue) (*domain.Issue, error) {
+	status, priority, labels := normalizeForWrite(i)
 	return scanIssue(s.pool.QueryRow(ctx, `
 		UPDATE issues SET
 			parent_id = NULLIF($2, '')::uuid,
@@ -70,8 +91,8 @@ func (s *IssueStore) UpdateIssue(ctx context.Context, i *domain.Issue) (*domain.
 			updated_at = now()
 		WHERE id = $1
 		RETURNING `+issueColumns,
-		i.ID, i.ParentID, i.Title, i.Description, i.Status, i.Priority,
-		i.AssigneeID, i.DueDate, i.Labels, i.Stage, i.Position))
+		i.ID, i.ParentID, i.Title, i.Description, status, priority,
+		i.AssigneeID, i.DueDate, labels, i.Stage, i.Position))
 }
 
 func (s *IssueStore) DeleteIssue(ctx context.Context, id string) error {

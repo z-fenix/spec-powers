@@ -28,6 +28,7 @@ func postJSON(t *testing.T, h http.Handler, path string, body any) *httptest.Res
 }
 
 type userBody struct {
+	Token string `json:"token"`
 	User struct {
 		ID          string `json:"id"`
 		Email       string `json:"email"`
@@ -49,6 +50,11 @@ func TestRegisterHandler(t *testing.T) {
 	}
 	if body.User.Email != "eve@example.com" || body.User.ID == "" || body.User.DisplayName != "Eve" {
 		t.Errorf("user = %+v", body.User)
+	}
+	// Register must also issue a token so clients (sp login --register)
+	// are authenticated right away, mirroring /auth/login.
+	if body.Token == "" {
+		t.Error("register response missing token")
 	}
 }
 

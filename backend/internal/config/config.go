@@ -14,6 +14,7 @@ type Config struct {
 	Env           string
 	AttachmentDir string
 	AgentWorkDir  string
+	StaticDir     string
 	LLMBaseURL    string
 	LLMAPIKey     string
 	LLMModel      string
@@ -29,6 +30,7 @@ func Load(getenv func(string) string) (Config, error) {
 		Env:           getenv("SP_ENV"),
 		AttachmentDir: getenv("SP_ATTACHMENT_DIR"),
 		AgentWorkDir:  getenv("SP_AGENT_WORK_DIR"),
+		StaticDir:     getenv("SP_STATIC_DIR"),
 		LLMBaseURL:    getenv("SP_LLM_BASE_URL"),
 		LLMAPIKey:     getenv("SP_LLM_API_KEY"),
 		LLMModel:      getenv("SP_LLM_MODEL"),

@@ -26,7 +26,7 @@ func TestWorkflowStoreIntegration(t *testing.T) {
 	artifacts := NewArtifactStore(pool)
 	mappings := NewTaskMappingStore(pool)
 
-	owner, err := users.CreateUser(ctx, "wf-owner@example.com", "h", "Owner")
+	owner, err := users.CreateUser(ctx, uniqueEmail("wf-owner"), "h", "Owner")
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}

@@ -59,6 +59,35 @@ func (m migrationDB) QueryVersion(ctx context.Context, version string) (bool, er
 	return applied, err
 }
 
+// migrationLockKey is the advisory-lock key under which all migration runs
+// on this database serialize.
+const migrationLockKey = "specpowers-migrations"
+
+// AcquireMigrationLock takes a session-scoped advisory lock on one pooled
+// connection and holds it until release is called, so concurrent
+// Migrate invocations (other processes or test packages) queue up instead
+// of racing on the DDL.
+func (m migrationDB) AcquireMigrationLock(ctx context.Context) (func(), error) {
+	conn, err := m.pool.Acquire(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("acquire connection: %w", err)
+	}
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock(hashtext($1))", migrationLockKey); err != nil {
+		conn.Release()
+		return nil, fmt.Errorf("advisory lock: %w", err)
+	}
+	return func() {
+		// Unlocking must not be cut short by caller-side cancellation.
+		unlockCtx := context.WithoutCancel(ctx)
+		if _, err := conn.Exec(unlockCtx, "SELECT pg_advisory_unlock(hashtext($1))", migrationLockKey); err != nil {
+			// A leaked session lock would deadlock future migrations, so
+			// drop the connection rather than return it to the pool.
+			_ = conn.Conn().Close(unlockCtx)
+		}
+		conn.Release()
+	}, nil
+}
+
 var ErrNotFound = store.ErrNotFound
 
 func IsConflict(err error) bool {

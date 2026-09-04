@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"specpowers/backend/internal/config"
 )
@@ -49,7 +51,8 @@ func TestBuildWiresHealthAndAuth(t *testing.T) {
 		t.Fatalf("health: got %d", w.Code)
 	}
 
-	body, _ := json.Marshal(map[string]string{"email": "srv@example.com", "password": "pw123456"})
+	email := fmt.Sprintf("srv-%d@example.com", time.Now().UnixNano())
+	body, _ := json.Marshal(map[string]string{"email": email, "password": "pw123456", "display_name": "Server Test"})
 	w = httptest.NewRecorder()
 	s.Handler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/auth/register",
 		bytes.NewReader(body)))

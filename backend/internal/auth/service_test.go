@@ -42,13 +42,17 @@ func (f *fakeUserStore) GetUserByEmail(_ context.Context, email string) (*domain
 	if !ok {
 		return nil, store.ErrNotFound
 	}
-	return u, nil
+	// Return a copy: the service clears PasswordHash on the result, which
+	// must not corrupt the stored record (real stores rescan rows anyway).
+	clone := *u
+	return &clone, nil
 }
 
 func (f *fakeUserStore) GetUser(_ context.Context, id string) (*domain.User, error) {
 	for _, u := range f.users {
 		if u.ID == id {
-			return u, nil
+			clone := *u
+			return &clone, nil
 		}
 	}
 	return nil, store.ErrNotFound
@@ -93,7 +97,7 @@ func newTestService() (*Service, *fakeUserStore, *fakeWorkspaceStore, *fakeMembe
 
 func TestRegisterCreatesUserAndDefaultWorkspace(t *testing.T) {
 	svc, users, ws, members := newTestService()
-	u, err := svc.Register(context.Background(), "alice@example.com", "password123", "Alice")
+	_, u, err := svc.Register(context.Background(), "alice@example.com", "password123", "Alice")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -121,7 +125,7 @@ func TestRegisterValidation(t *testing.T) {
 	}
 	for _, c := range cases {
 		svc, _, _, _ := newTestService()
-		if _, err := svc.Register(context.Background(), c.email, c.password, c.name); err == nil {
+		if _, _, err := svc.Register(context.Background(), c.email, c.password, c.name); err == nil {
 			t.Errorf("register(%q,%q,%q) accepted", c.email, c.password, c.name)
 		}
 	}
@@ -129,10 +133,10 @@ func TestRegisterValidation(t *testing.T) {
 
 func TestRegisterDuplicateEmailIsConflict(t *testing.T) {
 	svc, _, _, _ := newTestService()
-	if _, err := svc.Register(context.Background(), "bob@example.com", "password123", "Bob"); err != nil {
+	if _, _, err := svc.Register(context.Background(), "bob@example.com", "password123", "Bob"); err != nil {
 		t.Fatalf("first register: %v", err)
 	}
-	_, err := svc.Register(context.Background(), "BOB@example.com", "password123", "Bob2")
+	_, _, err := svc.Register(context.Background(), "BOB@example.com", "password123", "Bob2")
 	if err == nil {
 		t.Fatal("duplicate accepted")
 	}
@@ -144,7 +148,7 @@ func TestRegisterDuplicateEmailIsConflict(t *testing.T) {
 
 func TestLoginSuccess(t *testing.T) {
 	svc, _, _, _ := newTestService()
-	if _, err := svc.Register(context.Background(), "carol@example.com", "password123", "Carol"); err != nil {
+	if _, _, err := svc.Register(context.Background(), "carol@example.com", "password123", "Carol"); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	token, user, err := svc.Login(context.Background(), "CAROL@example.com", "password123")
@@ -161,7 +165,7 @@ func TestLoginSuccess(t *testing.T) {
 
 func TestLoginWrongPasswordOrMissingUser(t *testing.T) {
 	svc, _, _, _ := newTestService()
-	_, err := svc.Register(context.Background(), "dan@example.com", "password123", "Dan")
+	_, _, err := svc.Register(context.Background(), "dan@example.com", "password123", "Dan")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}

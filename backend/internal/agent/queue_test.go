@@ -340,6 +340,64 @@ func TestTriggerUnknownAgentIsNoop(t *testing.T) {
 	}
 }
 
+func TestTriggerNotifiesHumanAssignee(t *testing.T) {
+	agents := newFakeAgents()
+	runs := newFakeRuns()
+	ctx := context.Background()
+	sink := &recordingSink{}
+	trig := NewTrigger(agents, runs).WithNotifier(sink)
+
+	// Assignment to a human notifies the assignee and enqueues nothing.
+	if err := trig.OnIssueAssigned(ctx, &domain.Issue{ID: "i1", Title: "target", ProjectID: "p1", AssigneeID: "human-1"}); err != nil {
+		t.Fatalf("human assignee: %v", err)
+	}
+	if got, _ := runs.ListRuns(ctx, store.RunFilter{}); len(got) != 0 {
+		t.Fatalf("human assignee should not enqueue: %+v", got)
+	}
+	if len(sink.calls) != 1 {
+		t.Fatalf("got %d notifications, want 1", len(sink.calls))
+	}
+	if in := sink.calls[0]; in.UserID != "human-1" || in.Kind != "assigned" || in.IssueID != "i1" || in.ProjectID != "p1" {
+		t.Fatalf("notification = %+v", in)
+	}
+
+	// Agent assignee still enqueues a run and stays silent on notifications.
+	if _, err := agents.CreateAgent(ctx, &domain.Agent{ID: "a1", Name: "A"}); err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+	if err := trig.OnIssueAssigned(ctx, &domain.Issue{ID: "i2", Title: "t2", ProjectID: "p1", AssigneeID: "a1"}); err != nil {
+		t.Fatalf("agent assignee: %v", err)
+	}
+	if got, _ := runs.ListRuns(ctx, store.RunFilter{IssueID: "i2"}); len(got) != 1 {
+		t.Fatalf("agent runs = %+v", got)
+	}
+	if len(sink.calls) != 1 {
+		t.Fatalf("agent assignee must not notify, calls = %+v", sink.calls)
+	}
+
+	// Parent wakeup with a human assignee notifies instead of enqueueing.
+	if err := trig.OnParentWakeup(ctx, &domain.Issue{ID: "p-1", Title: "parent", ProjectID: "p1", AssigneeID: "human-1"}); err != nil {
+		t.Fatalf("wakeup: %v", err)
+	}
+	if got, _ := runs.ListRuns(ctx, store.RunFilter{IssueID: "p-1"}); len(got) != 0 {
+		t.Fatalf("human wakeup should not enqueue: %+v", got)
+	}
+	if len(sink.calls) != 2 {
+		t.Fatalf("got %d notifications, want 2", len(sink.calls))
+	}
+	if in := sink.calls[1]; in.UserID != "human-1" || in.Kind != "wakeup" || in.IssueID != "p-1" {
+		t.Fatalf("wakeup notification = %+v", in)
+	}
+
+	// No assignee: silent.
+	if err := trig.OnIssueAssigned(ctx, &domain.Issue{ID: "i3", Title: "t3", ProjectID: "p1"}); err != nil {
+		t.Fatalf("no assignee: %v", err)
+	}
+	if len(sink.calls) != 2 {
+		t.Fatalf("empty assignee must stay silent, calls = %+v", sink.calls)
+	}
+}
+
 // ---- run completion notifications ----
 
 type queueIssueLookup struct {

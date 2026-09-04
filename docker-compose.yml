@@ -15,5 +15,27 @@ services:
       timeout: 3s
       retries: 10
 
+  # 全栈：postgres + spd（后端 API 与前端静态资源同端口）。
+  # 生产部署务必设置 SP_JWT_SECRET（随机长字符串），并按需设置 SP_LLM_*。
+  spd:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SP_DATABASE_URL: postgres://specpowers:specpowers@postgres:5432/specpowers?sslmode=disable
+      SP_JWT_SECRET: ${SP_JWT_SECRET:-dev-insecure-secret}
+      SP_LLM_API_KEY: ${SP_LLM_API_KEY:-}
+      SP_LLM_MODEL: ${SP_LLM_MODEL:-}
+      SP_LLM_BASE_URL: ${SP_LLM_BASE_URL:-https://api.openai.com/v1}
+    ports:
+      - "8080:8080"
+    volumes:
+      - specpowers_attachments:/data/attachments
+      - specpowers_agentwork:/data/agent-work
+    restart: unless-stopped
+
 volumes:
   specpowers_pgdata:
+  specpowers_attachments:
+  specpowers_agentwork:

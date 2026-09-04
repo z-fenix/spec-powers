@@ -19,6 +19,12 @@ func NewProjectStore(pool *pgxpool.Pool) *ProjectStore { return &ProjectStore{po
 
 const projectColumns = `id, workspace_id, name, description, archived, created_by, created_at`
 
+// qualifiedProjectColumns: same list as projectColumns but scoped to the
+// projects alias `p` for queries that join member tables (bare `id` would be
+// ambiguous).
+const qualifiedProjectColumns = `
+	p.id, p.workspace_id, p.name, p.description, p.archived, p.created_by, p.created_at`
+
 func scanProject(row pgx.Row) (*domain.Project, error) {
 	p := &domain.Project{}
 	err := row.Scan(&p.ID, &p.WorkspaceID, &p.Name, &p.Description, &p.Archived, &p.CreatedBy, &p.CreatedAt)
@@ -63,7 +69,7 @@ func (s *ProjectStore) SetProjectArchived(ctx context.Context, id string, archiv
 
 func (s *ProjectStore) ListProjectsForUser(ctx context.Context, userID string) ([]domain.Project, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT `+projectColumns+`
+		SELECT `+qualifiedProjectColumns+`
 		FROM projects p
 		JOIN project_members pm ON pm.project_id = p.id
 		WHERE pm.user_id = $1

@@ -37,6 +37,7 @@ cd frontend && npm install && npm run dev
 | `SP_JWT_SECRET` | dev 默认值 | JWT 签名密钥；`SP_ENV=production` 时必填 |
 | `SP_ENV` | `dev` | 运行环境 |
 | `SP_ATTACHMENT_DIR` | `data/attachments` | issue 附件的本地存储目录 |
+| `SP_STATIC_DIR` | 未设置 | 前端静态目录（`frontend/dist`）；设置后 spd 同端口托管前端（SPA 回退 index.html，`/api` 优先）。部署详见 `docs/deploy.md` |
 | `SP_LLM_API_KEY` / `SP_LLM_MODEL` | 未设置 | OpenAI 兼容接口的密钥与模型；两者都设置后 AI 拆分才启用 |
 | `SP_LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容接口地址 |
 | `SP_LLM_PROMPT_DIR` | 内置默认 | 提示词模板目录（`<kind>.md` 覆盖对应 phase） |
@@ -121,7 +122,13 @@ docker compose up -d
 cd backend && SP_TEST_PG_DSN="postgres://specpowers:specpowers@localhost:5432/specpowers?sslmode=disable" go test ./...
 ```
 
-集成测试（含 sp CLI 的集成测试：以 `server.Build` 起真实测试服务器，驱动 login → open → guard → verify → archive 全流程）由 `SP_TEST_PG_DSN` 守卫，未设置时自动跳过。
+集成测试（含 sp CLI 的集成测试：以 `server.Build` 起真实测试服务器，驱动 login → open → guard → verify → archive 全流程）由 `SP_TEST_PG_DSN` 守卫，未设置时自动跳过。**指向一个一次性数据库**（如 `specpowers_test`，用例会写入固定种子数据且不做完整清理），建议先 `dropdb --if-exists specpowers_test && createdb specpowers_test` 再跑：
+
+```bash
+SP_TEST_PG_DSN="postgres://specpowers:specpowers@localhost:5432/specpowers_test?sslmode=disable" go test ./...
+```
+
+生产部署（Docker Compose 一键全栈 / 主机二进制 / 前后端分离）见 `docs/deploy.md`。
 
 # 前端测试与构建
 cd frontend && npm test -- --run && npm run build

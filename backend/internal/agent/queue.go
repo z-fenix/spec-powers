@@ -151,15 +151,25 @@ func (q *Queue) Loop(ctx context.Context) {
 // Trigger implements issue.RunTrigger: it enqueues a run whenever an issue
 // is assigned to an agent, its status changes while agent-assigned, or an
 // agent-assigned parent is woken by its children reaching terminal states.
+// Human assignees instead get a notification (assignment, wakeup) — runs are
+// agent-only work, notifications are user-facing.
 type Trigger struct {
-	agents store.AgentStore
-	runs   store.RunStore
+	agents   store.AgentStore
+	runs     store.RunStore
+	notifier notification.Sink
 }
 
 var _ issue.RunTrigger = (*Trigger)(nil)
 
 func NewTrigger(agents store.AgentStore, runs store.RunStore) *Trigger {
 	return &Trigger{agents: agents, runs: runs}
+}
+
+// WithNotifier attaches a best-effort notification sink used to inform human
+// assignees about assignments and parent wakeups.
+func (t *Trigger) WithNotifier(n notification.Sink) *Trigger {
+	t.notifier = n
+	return t
 }
 
 func (t *Trigger) isAgent(ctx context.Context, id string) bool {
@@ -176,10 +186,11 @@ func (t *Trigger) enqueue(ctx context.Context, issueID, agentID, trigger string)
 }
 
 func (t *Trigger) OnIssueAssigned(ctx context.Context, i *domain.Issue) error {
-	if !t.isAgent(ctx, i.AssigneeID) {
-		return nil
+	if t.isAgent(ctx, i.AssigneeID) {
+		return t.enqueue(ctx, i.ID, i.AssigneeID, "assigned")
 	}
-	return t.enqueue(ctx, i.ID, i.AssigneeID, "assigned")
+	t.notifyHuman(ctx, i, "assigned", "Issue assigned to you: "+i.Title)
+	return nil
 }
 
 func (t *Trigger) OnIssueStatusChanged(ctx context.Context, i *domain.Issue) error {
@@ -190,8 +201,24 @@ func (t *Trigger) OnIssueStatusChanged(ctx context.Context, i *domain.Issue) err
 }
 
 func (t *Trigger) OnParentWakeup(ctx context.Context, parent *domain.Issue) error {
-	if !t.isAgent(ctx, parent.AssigneeID) {
-		return nil
+	if t.isAgent(ctx, parent.AssigneeID) {
+		return t.enqueue(ctx, parent.ID, parent.AssigneeID, "wakeup")
 	}
-	return t.enqueue(ctx, parent.ID, parent.AssigneeID, "wakeup")
+	t.notifyHuman(ctx, parent, "wakeup", "Sub-issues finished, awaiting acceptance: "+parent.Title)
+	return nil
+}
+
+// notifyHuman records a notification for the issue's (non-agent) assignee;
+// it is best-effort and stays silent without an assignee.
+func (t *Trigger) notifyHuman(ctx context.Context, i *domain.Issue, kind, title string) {
+	if t.notifier == nil || i.AssigneeID == "" {
+		return
+	}
+	t.notifier.Notify(ctx, notification.NotifyInput{
+		UserID:    i.AssigneeID,
+		Kind:      kind,
+		Title:     title,
+		IssueID:   i.ID,
+		ProjectID: i.ProjectID,
+	})
 }

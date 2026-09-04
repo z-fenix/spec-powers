@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -23,7 +24,7 @@ func seedCollabIssue(t *testing.T, pool *pgxpool.Pool) (*domain.Issue, string) {
 	projects := NewProjectStore(pool)
 	issues := NewIssueStore(pool)
 
-	author, err := users.CreateUser(ctx, "collab-author@example.com", "h", "Author")
+	author, err := users.CreateUser(ctx, fmt.Sprintf("collab-author-%d@example.com", time.Now().UnixNano()), "h", "Author")
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}

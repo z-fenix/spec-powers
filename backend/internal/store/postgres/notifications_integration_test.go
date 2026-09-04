@@ -23,7 +23,7 @@ func TestNotificationStoreRoundTrip(t *testing.T) {
 	issues := NewIssueStore(pool)
 	notifications := NewNotificationStore(pool)
 
-	user, err := users.CreateUser(ctx, "notify-user@example.com", "h", "Notify")
+	user, err := users.CreateUser(ctx, uniqueEmail("notify-user"), "h", "Notify")
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}

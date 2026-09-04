@@ -15,6 +15,9 @@ import (
 // users (cascading to agents, runs and run_logs) and the project.
 func seedAgentRuntime(t *testing.T, ctx context.Context, pool *pgxpool.Pool) (creatorID, agentID, issueID string) {
 	t.Helper()
+	if err := Migrate(ctx, NewMigrationDB(pool), MigrationsFS); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO users (email, password_hash, display_name)
 		VALUES ('agent-runtime-creator@example.com', 'x', 'Creator')

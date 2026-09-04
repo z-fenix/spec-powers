@@ -23,9 +23,24 @@ const bootstrapSQL = `CREATE TABLE IF NOT EXISTS schema_migrations (
 
 const insertAppliedSQL = `INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING`
 
+// migrationLocker is an optional MigrationDB capability that serializes
+// migration runs across concurrent processes (two spd instances starting at
+// once, parallel test packages): migration DDL is not concurrency-safe.
+type migrationLocker interface {
+	AcquireMigrationLock(ctx context.Context) (release func(), err error)
+}
+
 // Migrate applies every *.sql file in fsys (sorted by name) that is not yet
-// recorded in schema_migrations. Safe to call repeatedly.
+// recorded in schema_migrations. Safe to call repeatedly; when the backing
+// DB supports advisory locking, concurrent callers wait instead of racing.
 func Migrate(ctx context.Context, db MigrationDB, fsys fs.FS) error {
+	if locker, ok := db.(migrationLocker); ok {
+		release, err := locker.AcquireMigrationLock(ctx)
+		if err != nil {
+			return fmt.Errorf("acquire migration lock: %w", err)
+		}
+		defer release()
+	}
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
 		return fmt.Errorf("read migrations: %w", err)

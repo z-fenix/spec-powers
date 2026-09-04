@@ -430,6 +430,31 @@ func TestArchiveWakesParentIssueOwner(t *testing.T) {
 	}
 }
 
+type fakeWakeupHook struct{ parents []*domain.Issue }
+
+func (h *fakeWakeupHook) OnParentWakeup(_ context.Context, parent *domain.Issue) error {
+	h.parents = append(h.parents, parent)
+	return nil
+}
+
+func TestArchiveNotifiesParentWakeupHook(t *testing.T) {
+	f, w := archivedFixture()
+	f.issues.byID["i1"].ParentID = "root-issue"
+	f.issues.byID["root-issue"] = &domain.Issue{ID: "root-issue", Title: "root", AssigneeID: "human-1"}
+	hook := &fakeWakeupHook{}
+	f.svc = f.svc.WithWakeupHook(hook)
+
+	if _, err := f.svc.Archive(context.Background(), "bob", "c1"); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if len(w.recorded) != 1 {
+		t.Fatalf("wakeups = %v, want recorded", w.recorded)
+	}
+	if len(hook.parents) != 1 || hook.parents[0].ID != "root-issue" || hook.parents[0].AssigneeID != "human-1" {
+		t.Errorf("hook parents = %+v, want [root-issue]", hook.parents)
+	}
+}
+
 func TestArchiveWithoutParentRecordsNoWakeup(t *testing.T) {
 	f, w := archivedFixture()
 

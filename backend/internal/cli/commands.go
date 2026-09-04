@@ -214,7 +214,15 @@ func cmdLogin(args []string, stdout, stderr io.Writer) int {
 		err error
 	)
 	if *register {
-		res, err = c.Register(*email, *password, *displayName)
+		name := *displayName
+		if name == "" {
+			// Default to the email local part so `--register` works
+			// without --name (the server requires a display name).
+			if i := strings.Index(*email, "@"); i > 0 {
+				name = (*email)[:i]
+			}
+		}
+		res, err = c.Register(*email, *password, name)
 	} else {
 		res, err = c.Login(*email, *password)
 	}

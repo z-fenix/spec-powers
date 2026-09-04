@@ -123,6 +123,8 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	)
 	workflowService := workflow.NewService(changes, artifacts, taskMappings, issues, projects)
 	workflowService = workflowService.WithWaker(issues)
+	runTrigger := agent.NewTrigger(agents, runs)
+	workflowService = workflowService.WithWakeupHook(runTrigger)
 	workflowService = workflowService.WithCreator(issueService)
 	skillRegistry, err := skill.DefaultRegistry()
 	if err != nil {
@@ -181,7 +183,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 		MentionHook: mentionTrigger.OnComment,
 	})
 	queue := agent.NewQueue(runs, runLogs, agents, executor).WithNotifier(notificationSvc, issues)
-	issueService = issueService.WithRunTrigger(agent.NewTrigger(agents, runs))
+	issueService = issueService.WithRunTrigger(runTrigger.WithNotifier(notificationSvc))
 	// Long-lived credentials for locally registered agent runtimes (sp agent
 	// register). Revocation is deleting the agent.
 	runtimeTokens := auth.NewTokenService(cfg.JWTSecret, agent.RuntimeTokenTTL)
@@ -210,9 +212,19 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 			Runs:    agentHandler.RunRoutes(),
 			Notifs:  notificationHandler.Routes(),
 			Runtime: runtimeHandler.Routes(),
+			Static:  staticFromConfig(cfg),
 		}),
 		pool:       pool,
 		ownsPool:   ownsPool,
 		stopWorker: stopWorker,
 	}, nil
+}
+
+// staticFromConfig returns the SPA file handler when SP_STATIC_DIR points at
+// a built frontend; an empty dir disables static serving (API-only mode).
+func staticFromConfig(cfg config.Config) http.Handler {
+	if cfg.StaticDir == "" {
+		return nil
+	}
+	return httpapi.SPAHandler(cfg.StaticDir)
 }

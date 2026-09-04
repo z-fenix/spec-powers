@@ -35,15 +35,16 @@ type projectAccess interface {
 }
 
 type Service struct {
-	changes   store.ChangeStore
-	artifacts store.ArtifactStore
-	mappings  store.TaskMappingStore
-	issues    issueLookup
-	projects  projectAccess
-	splitter  *Splitter
-	wakeups   wakeupRecorder
-	creator   issueCreator
-	skills    *skill.Registry
+	changes    store.ChangeStore
+	artifacts  store.ArtifactStore
+	mappings   store.TaskMappingStore
+	issues     issueLookup
+	projects   projectAccess
+	splitter   *Splitter
+	wakeups    wakeupRecorder
+	wakeupHook parentWakeupHook
+	creator    issueCreator
+	skills     *skill.Registry
 	// agentAccess identifies agent identities; agents act on changes of
 	// their assigned issues without project membership (system-driven
 	// runs). Nil keeps the strict membership rule.
@@ -76,6 +77,13 @@ func (s *Service) WithSplitter(splitter *Splitter) *Service {
 // parent issue's owner for acceptance.
 func (s *Service) WithWaker(w wakeupRecorder) *Service {
 	s.wakeups = w
+	return s
+}
+
+// WithWakeupHook attaches the archive-time parent wakeup hook (notification
+// for human owners, run enqueue for agent owners).
+func (s *Service) WithWakeupHook(h parentWakeupHook) *Service {
+	s.wakeupHook = h
 	return s
 }
 
@@ -185,8 +193,10 @@ func (s *Service) ListArtifacts(ctx context.Context, userID, changeID string) ([
 }
 
 // GetArtifact returns one artifact kind; version <= 0 selects the latest.
+// Verify reports are readable like any other kind, even though they are
+// written only through the dedicated verify endpoint.
 func (s *Service) GetArtifact(ctx context.Context, userID, changeID, kind string, version int) (*domain.Artifact, error) {
-	if !IsValidKind(kind) {
+	if !IsValidKind(kind) && kind != KindVerify {
 		return nil, httpapi.ErrInvalid("unknown artifact kind: " + kind)
 	}
 	if _, err := s.requireChangeRole(ctx, userID, changeID); err != nil {

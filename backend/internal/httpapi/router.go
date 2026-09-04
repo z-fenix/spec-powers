@@ -33,6 +33,9 @@ type Deps struct {
 	Runs    http.Handler
 	Notifs  http.Handler
 	Runtime http.Handler
+	// Static serves the SPA frontend at the root when set; API routes keep
+	// precedence.
+	Static http.Handler
 }
 
 func NewRouter(deps Deps) http.Handler {
@@ -72,6 +75,10 @@ func NewRouter(deps Deps) http.Handler {
 			Error(w, ErrNotFound("route not found"))
 		})
 	})
+
+	if deps.Static != nil {
+		r.Mount("/", deps.Static)
+	}
 
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 		Error(w, ErrNotFound("route not found"))

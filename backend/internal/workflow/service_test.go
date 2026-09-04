@@ -347,6 +347,16 @@ func TestGetArtifact(t *testing.T) {
 		}
 	})
 
+	t.Run("verify kind is readable", func(t *testing.T) {
+		f.artifacts.byKind["verify"] = []domain.Artifact{
+			{ID: "a9", ChangeID: "c1", Kind: "verify", Version: 1, Content: "result: pass"},
+		}
+		a, err := f.svc.GetArtifact(context.Background(), "bob", "c1", "verify", 0)
+		if err != nil || a.Kind != "verify" || a.Content != "result: pass" {
+			t.Errorf("verify artifact = %+v, %v", a, err)
+		}
+	})
+
 	t.Run("missing artifact is not found", func(t *testing.T) {
 		f.artifacts.missing["c1|design"] = true
 		_, err := f.svc.GetArtifact(context.Background(), "bob", "c1", "design", 0)

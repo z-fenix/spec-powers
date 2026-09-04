@@ -50,12 +50,12 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		httpapi.Error(w, httpapi.ErrInvalid("malformed JSON body"))
 		return
 	}
-	user, err := h.svc.Register(r.Context(), req.Email, req.Password, req.DisplayName)
+	token, user, err := h.svc.Register(r.Context(), req.Email, req.Password, req.DisplayName)
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
-	httpapi.JSON(w, http.StatusCreated, map[string]any{"user": toDTO(user)})
+	httpapi.JSON(w, http.StatusCreated, map[string]any{"token": token, "user": toDTO(user)})
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {

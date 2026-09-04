@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 )
 
 // finalLLM makes the executor post one final message immediately.
@@ -26,7 +27,7 @@ func TestLocalAgentRuntimeEndToEnd(t *testing.T) {
 
 	// 1. Human login and fixtures.
 	code, _, errOut := runCLI(t, "login", "--server", srv.URL,
-		"--email", "runtime-e2e@example.com", "--password", "pw123456", "--register")
+		"--email", fmt.Sprintf("runtime-e2e-%d@example.com", time.Now().UnixNano()), "--password", "pw123456", "--register")
 	if code != 0 {
 		t.Fatalf("login: exit %d stderr %s", code, errOut)
 	}
@@ -41,8 +42,10 @@ func TestLocalAgentRuntimeEndToEnd(t *testing.T) {
 		map[string]string{"title": "本机 agent 任务", "description": "由本地运行时执行"})
 	issueID := issue["issue"].(map[string]any)["id"].(string)
 
-	// 2. Register the local agent through the CLI.
-	code, out, errOut := runCLI(t, "agent", "register", "--name", "worker",
+	// 2. Register the local agent through the CLI. --force: a leftover
+	// credential on the real machine (previous aborted run) must not break
+	// test isolation.
+	code, out, errOut := runCLI(t, "agent", "register", "--name", "worker", "--force",
 		"--description", "本机工作机", "brainstorm", "--json")
 	if code != 0 {
 		t.Fatalf("agent register: exit %d stderr %s out %s", code, errOut, out)
@@ -123,7 +126,9 @@ func TestLocalAgentRuntimeEndToEnd(t *testing.T) {
 	}
 
 	// 6. Deregister deletes the agent on the server and the local credential.
-	code, _, errOut = runCLI(t, "agent", "deregister")
+	// --name is explicit: the real machine's ~/.sp/agents may hold other
+	// credentials, and deregister refuses when ambiguous.
+	code, _, errOut = runCLI(t, "agent", "deregister", "--name", "worker")
 	if code != 0 {
 		t.Fatalf("deregister: exit %d stderr %s", code, errOut)
 	}

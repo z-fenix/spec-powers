@@ -14,6 +14,13 @@ type wakeupRecorder interface {
 	CreateIssueWakeup(ctx context.Context, issueID, childIssueID string) error
 }
 
+// parentWakeupHook is invoked after an archive records a parent wakeup, so
+// the parent's owner gets a notification (human) or a run (agent). It
+// matches issue.RunTrigger's OnParentWakeup without importing the package.
+type parentWakeupHook interface {
+	OnParentWakeup(ctx context.Context, parent *domain.Issue) error
+}
+
 // GuardReport is the gate evaluation for a change.
 type GuardReport struct {
 	ChangeID     string   `json:"change_id"`
@@ -295,6 +302,18 @@ func (s *Service) wakeChangeIssueParent(ctx context.Context, c *domain.Change) e
 	}
 	if err := s.wakeups.CreateIssueWakeup(ctx, i.ParentID, i.ID); err != nil {
 		return httpapi.ErrInternal("record parent wakeup failed")
+	}
+	if s.wakeupHook != nil {
+		parent, err := s.issues.GetIssue(ctx, i.ParentID)
+		if err == store.ErrNotFound {
+			return httpapi.ErrNotFound("parent issue not found")
+		}
+		if err != nil {
+			return httpapi.ErrInternal("get parent issue failed")
+		}
+		if err := s.wakeupHook.OnParentWakeup(ctx, parent); err != nil {
+			return httpapi.ErrInternal("notify parent wakeup failed")
+		}
 	}
 	return nil
 }

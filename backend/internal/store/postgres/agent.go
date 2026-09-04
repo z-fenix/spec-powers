@@ -36,11 +36,15 @@ func (s *AgentStore) CreateAgent(ctx context.Context, a *domain.Agent) (*domain.
 	if runtime == "" {
 		runtime = "server"
 	}
+	skills := a.Skills
+	if skills == nil {
+		skills = []string{}
+	}
 	return scanAgent(s.pool.QueryRow(ctx, `
 		INSERT INTO agents (id, name, description, skills, runtime, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING `+agentColumns,
-		a.ID, a.Name, a.Description, a.Skills, runtime, a.CreatedBy))
+		a.ID, a.Name, a.Description, skills, runtime, a.CreatedBy))
 }
 
 func (s *AgentStore) GetAgent(ctx context.Context, id string) (*domain.Agent, error) {
@@ -56,7 +60,7 @@ func (s *AgentStore) ListAgents(ctx context.Context) ([]domain.Agent, error) {
 	var list []domain.Agent
 	for rows.Next() {
 		var a domain.Agent
-		if err := rows.Scan(&a.ID, &a.Name, &a.Description, &a.Skills, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Description, &a.Skills, &a.Runtime, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan agent: %w", err)
 		}
 		list = append(list, a)
@@ -65,11 +69,15 @@ func (s *AgentStore) ListAgents(ctx context.Context) ([]domain.Agent, error) {
 }
 
 func (s *AgentStore) UpdateAgent(ctx context.Context, a *domain.Agent) (*domain.Agent, error) {
+	skills := a.Skills
+	if skills == nil {
+		skills = []string{}
+	}
 	return scanAgent(s.pool.QueryRow(ctx, `
 		UPDATE agents SET name = $2, description = $3, skills = $4, runtime = $5, updated_at = now()
 		WHERE id = $1
 		RETURNING `+agentColumns,
-		a.ID, a.Name, a.Description, a.Skills, a.Runtime))
+		a.ID, a.Name, a.Description, skills, a.Runtime))
 }
 
 func (s *AgentStore) DeleteAgent(ctx context.Context, id string) error {

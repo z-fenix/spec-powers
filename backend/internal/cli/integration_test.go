@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"specpowers/backend/internal/config"
 	"specpowers/backend/internal/server"
@@ -105,7 +106,7 @@ func TestFullClassicFlowThroughCLI(t *testing.T) {
 
 	// 1. login --register stores the session.
 	code, _, errOut := runCLI(t, "login", "--server", srv.URL,
-		"--email", "flow@example.com", "--password", "pw123456", "--register")
+		"--email", fmt.Sprintf("flow-%d@example.com", time.Now().UnixNano()), "--password", "pw123456", "--register")
 	if code != 0 {
 		t.Fatalf("login: exit %d stderr %s", code, errOut)
 	}
@@ -233,14 +234,14 @@ func TestCLIAgainstServerWithoutSplitter(t *testing.T) {
 	defer srv.Close()
 
 	runCLI(t, "login", "--server", srv.URL,
-		"--email", "nosplit@example.com", "--password", "pw123456", "--register")
+		"--email", fmt.Sprintf("nosplit-%d@example.com", time.Now().UnixNano()), "--password", "pw123456", "--register")
 	sess, _ := LoadSession()
 	proj := apiCall(t, srv.URL, sess.Token, http.MethodPost, "/projects", map[string]string{"name": "NoSplit"})
 	issue := apiCall(t, srv.URL, sess.Token, http.MethodPost,
 		fmt.Sprintf("/projects/%s/issues", proj["project"].(map[string]any)["id"].(string)),
 		map[string]string{"title": "未发布任务"})
 
-	code, _, errOut := runCLI(t, "open", "--issue", issue["id"].(string))
+	code, _, errOut := runCLI(t, "open", "--issue", issue["issue"].(map[string]any)["id"].(string))
 	if code != 1 {
 		t.Fatalf("open without splitter: exit %d, want 1", code)
 	}

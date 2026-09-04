@@ -163,9 +163,15 @@ func (s *ArtifactStore) GetArtifact(ctx context.Context, changeID, kind string, 
 // ListArtifacts always returns proposal, specs, design, tasks.
 const artifactKindOrder = `array_position(ARRAY['proposal', 'specs', 'design', 'tasks'], kind)`
 
+// qualifiedArtifactColumns: artifactColumns scoped to the artifacts alias
+// `a` for queries that join the latest-version subquery (bare `kind` would
+// be ambiguous).
+const qualifiedArtifactColumns = `
+	a.id, a.change_id::text, a.kind, a.version, a.content, a.created_by::text, a.created_at`
+
 func (s *ArtifactStore) ListArtifacts(ctx context.Context, changeID string) ([]domain.Artifact, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT `+artifactColumns+`
+		SELECT `+qualifiedArtifactColumns+`
 		FROM artifacts a
 		JOIN (
 			SELECT kind, MAX(version) AS max_version
@@ -173,7 +179,7 @@ func (s *ArtifactStore) ListArtifacts(ctx context.Context, changeID string) ([]d
 			GROUP BY kind
 		) latest ON a.kind = latest.kind AND a.version = latest.max_version
 		WHERE a.change_id = $1
-		ORDER BY `+artifactKindOrder, changeID)
+		ORDER BY array_position(ARRAY['proposal', 'specs', 'design', 'tasks'], a.kind)`, changeID)
 	if err != nil {
 		return nil, fmt.Errorf("list artifacts: %w", err)
 	}

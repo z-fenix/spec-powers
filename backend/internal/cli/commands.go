@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"specpowers/backend/internal/skill"
 )
 
 const defaultServer = "http://localhost:8080"
@@ -21,6 +24,9 @@ Usage:
   sp open   --issue ID [--manual]
   sp skills
   sp skill  <KEY>
+  sp skill  install [KEY...] [--dir PATH] [--agent claude-code|generic] [--force]
+  sp skill  list --installed [--dir PATH] [--agent claude-code|generic]
+  sp skill  uninstall KEY... [--dir PATH] [--agent claude-code|generic]
   sp next-skill [--change ID]
   sp artifact write <KIND> [--file PATH | --content TEXT] [--change ID]
   sp guard  [--change ID]
@@ -48,6 +54,16 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "skills":
 		return cmdSkills(args[1:], stdout, stderr)
 	case "skill":
+		if len(args) >= 2 {
+			switch args[1] {
+			case "install":
+				return cmdSkillInstall(args[2:], stdout, stderr)
+			case "list":
+				return cmdSkillList(args[2:], stdout, stderr)
+			case "uninstall":
+				return cmdSkillUninstall(args[2:], stdout, stderr)
+			}
+		}
 		return cmdSkill(args[1:], stdout, stderr)
 	case "next-skill":
 		return cmdNextSkill(args[1:], stdout, stderr)
@@ -651,6 +667,173 @@ func cmdNextSkill(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprintf(stdout, "# %s (%s)\n\n%s\n", s.Name, s.Key, s.Instructions)
+	return 0
+}
+
+// ---- skill install / list --installed / uninstall ----
+
+// resolveSkillsDir resolves the install target: --dir wins, otherwise the
+// agent default (claude-code -> ~/.claude/skills). The generic agent has no
+// standard location, so it requires --dir.
+func resolveSkillsDir(agent, dir string) (string, error) {
+	switch agent {
+	case "", "claude-code":
+	case "generic":
+		if dir == "" {
+			return "", fmt.Errorf("--dir is required for --agent generic")
+		}
+	default:
+		return "", fmt.Errorf("invalid agent %q (want claude-code or generic)", agent)
+	}
+	if dir != "" {
+		return dir, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home dir: %w", err)
+	}
+	return filepath.Join(home, ".claude", "skills"), nil
+}
+
+// targetSkills loads the skills to install: the named keys, or the whole
+// embedded registry when no key is given.
+func targetSkills(keys []string) ([]*skill.Skill, error) {
+	reg, err := skill.DefaultRegistry()
+	if err != nil {
+		return nil, err
+	}
+	if len(keys) == 0 {
+		return reg.List(), nil
+	}
+	var out []*skill.Skill
+	for _, key := range keys {
+		s, ok := reg.Get(key)
+		if !ok {
+			return nil, fmt.Errorf("unknown skill %q (run `sp skills`)", key)
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+// collectPositionals parses flags and positional args in any order: the
+// flag package stops at the first non-flag token, so parsing is repeated
+// over the remainder while collecting positionals.
+func collectPositionals(fs *flag.FlagSet, args []string) ([]string, error) {
+	var pos []string
+	rest := args
+	for len(rest) > 0 {
+		if err := fs.Parse(rest); err != nil {
+			return nil, err
+		}
+		rest = fs.Args()
+		if len(rest) == 0 {
+			break
+		}
+		pos = append(pos, rest[0])
+		rest = rest[1:]
+	}
+	return pos, nil
+}
+
+func cmdSkillInstall(args []string, stdout, stderr io.Writer) int {
+	e := &env{stdout: stdout, stderr: stderr}
+	fs := flag.NewFlagSet("skill install", flag.ContinueOnError)
+	e.resolveFlags(fs)
+	dirFlag := fs.String("dir", "", "target skills directory (default ~/.claude/skills)")
+	agent := fs.String("agent", "claude-code", "target agent type: claude-code or generic")
+	force := fs.Bool("force", false, "overwrite installed skills of the same name")
+	keys, err := collectPositionals(fs, args)
+	if err != nil {
+		return 2
+	}
+	dir, err := resolveSkillsDir(*agent, *dirFlag)
+	if err != nil {
+		return e.fail(2, err)
+	}
+	skills, err := targetSkills(keys)
+	if err != nil {
+		return e.fail(1, err)
+	}
+	installed, err := skill.InstallSkills(dir, skills, *force)
+	if err != nil {
+		return e.fail(1, err)
+	}
+	if e.json {
+		printJSON(stdout, map[string]any{"installed": installed, "dir": dir})
+		return 0
+	}
+	for _, key := range installed {
+		fmt.Fprintf(stdout, "installed %s -> %s\n", key, filepath.Join(dir, key, "SKILL.md"))
+	}
+	return 0
+}
+
+func cmdSkillList(args []string, stdout, stderr io.Writer) int {
+	e := &env{stdout: stdout, stderr: stderr}
+	fs := flag.NewFlagSet("skill list", flag.ContinueOnError)
+	e.resolveFlags(fs)
+	installed := fs.Bool("installed", false, "list skills installed on this machine")
+	dirFlag := fs.String("dir", "", "skills directory (default ~/.claude/skills)")
+	agent := fs.String("agent", "claude-code", "target agent type: claude-code or generic")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if !*installed {
+		fmt.Fprintln(stderr, "usage: sp skill list --installed [--dir PATH] [--agent claude-code|generic]")
+		return 2
+	}
+	dir, err := resolveSkillsDir(*agent, *dirFlag)
+	if err != nil {
+		return e.fail(2, err)
+	}
+	keys, err := skill.ListInstalled(dir)
+	if err != nil {
+		return e.fail(1, err)
+	}
+	if e.json {
+		printJSON(stdout, keys)
+		return 0
+	}
+	if len(keys) == 0 {
+		fmt.Fprintf(stdout, "no skills installed in %s\n", dir)
+		return 0
+	}
+	for _, key := range keys {
+		fmt.Fprintln(stdout, key)
+	}
+	return 0
+}
+
+func cmdSkillUninstall(args []string, stdout, stderr io.Writer) int {
+	e := &env{stdout: stdout, stderr: stderr}
+	fs := flag.NewFlagSet("skill uninstall", flag.ContinueOnError)
+	e.resolveFlags(fs)
+	dirFlag := fs.String("dir", "", "skills directory (default ~/.claude/skills)")
+	agent := fs.String("agent", "claude-code", "target agent type: claude-code or generic")
+	keys, err := collectPositionals(fs, args)
+	if err != nil {
+		return 2
+	}
+	if len(keys) == 0 {
+		fmt.Fprintln(stderr, "usage: sp skill uninstall KEY... [--dir PATH] [--agent claude-code|generic]")
+		return 2
+	}
+	dir, err := resolveSkillsDir(*agent, *dirFlag)
+	if err != nil {
+		return e.fail(2, err)
+	}
+	for _, key := range keys {
+		if err := skill.UninstallSkill(dir, key); err != nil {
+			return e.fail(1, err)
+		}
+		if !e.json {
+			fmt.Fprintf(stdout, "uninstalled %s from %s\n", key, dir)
+		}
+	}
+	if e.json {
+		printJSON(stdout, map[string]any{"uninstalled": keys, "dir": dir})
+	}
 	return 0
 }
 

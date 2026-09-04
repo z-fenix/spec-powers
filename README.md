@@ -61,7 +61,15 @@ cd frontend && npm test -- --run && npm run build
 | GET | `/auth/me` | 当前用户（需 Bearer token） |
 | POST | `/projects` | 创建项目（创建者成为项目 owner） |
 | GET | `/projects` | 我参与的项目列表 |
+| GET | `/projects/{id}` | 项目详情（成员） |
+| PATCH | `/projects/{id}` | 更新名称/描述（仅 owner） |
+| POST | `/projects/{id}/archive` | 归档/恢复项目（仅 owner，body: `{archived: bool}`） |
 | POST | `/projects/{id}/members` | 添加项目成员（仅 owner，role: owner/member） |
+| GET | `/projects/{id}/resources` | 资源绑定列表（成员） |
+| POST | `/projects/{id}/resources` | 绑定资源（仅 owner，type: github_repo/local_directory） |
+| DELETE | `/projects/{id}/resources/{rid}` | 移除资源绑定（仅 owner） |
+| GET | `/projects/{id}/context` | 读取项目上下文（成员） |
+| PUT | `/projects/{id}/context` | 写入项目上下文（仅 owner） |
 
 错误统一信封：`{"error":{"code":"...","message":"..."}}`。
 

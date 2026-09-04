@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -61,6 +62,55 @@ func (s *ChangeStore) UpdateChange(ctx context.Context, c *domain.Change) (*doma
 		UPDATE changes SET phase = $2, status = $3, updated_at = now()
 		WHERE id = $1
 		RETURNING `+changeColumns, c.ID, c.Phase, c.Status))
+}
+
+// ---- ChangeHandoff records ----
+
+const handoffColumns = `
+	id, change_id::text, from_phase, to_phase, created_by::text, created_at`
+
+func scanHandoff(row pgx.Row) (*domain.ChangeHandoff, error) {
+	h := &domain.ChangeHandoff{}
+	err := row.Scan(&h.ID, &h.ChangeID, &h.FromPhase, &h.ToPhase, &h.CreatedBy, &h.CreatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, store.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("scan handoff: %w", err)
+	}
+	return h, nil
+}
+
+func (s *ChangeStore) CreateChangeHandoff(ctx context.Context, h *domain.ChangeHandoff) (*domain.ChangeHandoff, error) {
+	var createdAt *time.Time
+	if !h.CreatedAt.IsZero() {
+		createdAt = &h.CreatedAt
+	}
+	return scanHandoff(s.pool.QueryRow(ctx, `
+		INSERT INTO change_handoffs (change_id, from_phase, to_phase, created_by, created_at)
+		VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, now()))
+		RETURNING `+handoffColumns,
+		h.ChangeID, h.FromPhase, h.ToPhase, h.CreatedBy, createdAt))
+}
+
+func (s *ChangeStore) ListChangeHandoffs(ctx context.Context, changeID string) ([]domain.ChangeHandoff, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT `+handoffColumns+`
+		FROM change_handoffs WHERE change_id = $1
+		ORDER BY created_at DESC, id DESC`, changeID)
+	if err != nil {
+		return nil, fmt.Errorf("list handoffs: %w", err)
+	}
+	defer rows.Close()
+	var list []domain.ChangeHandoff
+	for rows.Next() {
+		var h domain.ChangeHandoff
+		if err := rows.Scan(&h.ID, &h.ChangeID, &h.FromPhase, &h.ToPhase, &h.CreatedBy, &h.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan handoff: %w", err)
+		}
+		list = append(list, h)
+	}
+	return list, rows.Err()
 }
 
 // ---- ArtifactStore ----

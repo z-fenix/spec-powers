@@ -40,6 +40,7 @@ type Service struct {
 	issues    issueLookup
 	projects  projectAccess
 	splitter  *Splitter
+	wakeups   wakeupRecorder
 }
 
 func NewService(changes store.ChangeStore, artifacts store.ArtifactStore, mappings store.TaskMappingStore, issues issueLookup, projects projectAccess) *Service {
@@ -56,6 +57,13 @@ func NewService(changes store.ChangeStore, artifacts store.ArtifactStore, mappin
 // reports the splitter as unconfigured.
 func (s *Service) WithSplitter(splitter *Splitter) *Service {
 	s.splitter = splitter
+	return s
+}
+
+// WithWaker attaches the wakeup recorder used by change archive to wake the
+// parent issue's owner for acceptance.
+func (s *Service) WithWaker(w wakeupRecorder) *Service {
+	s.wakeups = w
 	return s
 }
 

@@ -142,6 +142,15 @@ func (s *Splitter) Run(ctx context.Context, userID, issueID string) (*domain.Cha
 				return nil, err
 			}
 		} else if idx+1 < len(order) {
+			if _, err := s.changes.CreateChangeHandoff(ctx, &domain.ChangeHandoff{
+				ChangeID:  change.ID,
+				FromPhase: kind,
+				ToPhase:   order[idx+1],
+				CreatedBy: userID,
+			}); err != nil {
+				s.failChange(ctx, change)
+				return nil, httpapi.ErrInternal("record handoff failed")
+			}
 			change.Phase = order[idx+1]
 			if _, err := s.changes.UpdateChange(ctx, change); err != nil {
 				s.failChange(ctx, change)

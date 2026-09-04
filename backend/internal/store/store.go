@@ -103,6 +103,11 @@ type ChangeStore interface {
 	GetChangeByIssue(ctx context.Context, issueID string) (*domain.Change, error)
 	// UpdateChange persists the change's current phase and status.
 	UpdateChange(ctx context.Context, c *domain.Change) (*domain.Change, error)
+	// CreateChangeHandoff records one guard-approved phase advance. A zero
+	// CreatedAt falls back to the database clock.
+	CreateChangeHandoff(ctx context.Context, h *domain.ChangeHandoff) (*domain.ChangeHandoff, error)
+	// ListChangeHandoffs returns the change's handoffs, newest first.
+	ListChangeHandoffs(ctx context.Context, changeID string) ([]domain.ChangeHandoff, error)
 }
 
 type ArtifactStore interface {

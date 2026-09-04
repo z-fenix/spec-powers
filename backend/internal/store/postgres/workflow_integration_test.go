@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"testing"
+	"time"
 
 	"specpowers/backend/internal/domain"
 	"specpowers/backend/internal/store"
@@ -227,4 +228,87 @@ func TestWorkflowStoreIntegration(t *testing.T) {
 			t.Errorf("reloaded after updates = %+v, %v", reloaded, err)
 		}
 	})
+
+	t.Run("change handoffs", func(t *testing.T) {
+		parent4, err := issues.CreateIssue(ctx, &domain.Issue{
+			ProjectID: proj.ID, Title: "parent 4", Status: "todo", Priority: "none", CreatedBy: owner.ID,
+		})
+		if err != nil {
+			t.Fatalf("create parent4: %v", err)
+		}
+		c, err := changes.CreateChange(ctx, &domain.Change{
+			ProjectID: proj.ID, IssueID: parent4.ID, CreatedBy: owner.ID,
+		})
+		if err != nil {
+			t.Fatalf("create change: %v", err)
+		}
+
+		first, err := changes.CreateChangeHandoff(ctx, &domain.ChangeHandoff{
+			ChangeID: c.ID, FromPhase: "proposal", ToPhase: "specs",
+			CreatedBy: owner.ID, CreatedAt: gateTestTime(0),
+		})
+		if err != nil {
+			t.Fatalf("create handoff: %v", err)
+		}
+		if first.ID == "" || first.FromPhase != "proposal" || first.ToPhase != "specs" {
+			t.Errorf("first handoff = %+v", first)
+		}
+		second, err := changes.CreateChangeHandoff(ctx, &domain.ChangeHandoff{
+			ChangeID: c.ID, FromPhase: "specs", ToPhase: "design",
+			CreatedBy: owner.ID, CreatedAt: gateTestTime(1),
+		})
+		if err != nil {
+			t.Fatalf("create second handoff: %v", err)
+		}
+
+		list, err := changes.ListChangeHandoffs(ctx, c.ID)
+		if err != nil || len(list) != 2 {
+			t.Fatalf("handoffs = %+v, %v", list, err)
+		}
+		if list[0].ToPhase != "design" || list[1].ToPhase != "specs" {
+			t.Errorf("handoffs not newest first: %+v", list)
+		}
+		if list[0].ChangeID != c.ID || list[0].CreatedBy != owner.ID {
+			t.Errorf("handoff binding = %+v", list[0])
+		}
+		_ = second
+
+		// a handoff with zero CreatedAt falls back to the database default
+		third, err := changes.CreateChangeHandoff(ctx, &domain.ChangeHandoff{
+			ChangeID: c.ID, FromPhase: "design", ToPhase: "tasks", CreatedBy: owner.ID,
+		})
+		if err != nil || third.CreatedAt.IsZero() {
+			t.Errorf("default-timestamp handoff = %+v, %v", third, err)
+		}
+	})
+
+	t.Run("verify report artifact kind", func(t *testing.T) {
+		parent5, err := issues.CreateIssue(ctx, &domain.Issue{
+			ProjectID: proj.ID, Title: "parent 5", Status: "todo", Priority: "none", CreatedBy: owner.ID,
+		})
+		if err != nil {
+			t.Fatalf("create parent5: %v", err)
+		}
+		c, err := changes.CreateChange(ctx, &domain.Change{
+			ProjectID: proj.ID, IssueID: parent5.ID, CreatedBy: owner.ID,
+		})
+		if err != nil {
+			t.Fatalf("create change: %v", err)
+		}
+		a, err := artifacts.CreateArtifact(ctx, &domain.Artifact{
+			ChangeID: c.ID, Kind: "verify", Content: "result: pass\n", CreatedBy: owner.ID,
+		})
+		if err != nil {
+			t.Fatalf("create verify artifact: %v", err)
+		}
+		got, err := artifacts.GetArtifact(ctx, c.ID, "verify", 0)
+		if err != nil || got.Version != a.Version || got.Content != "result: pass\n" {
+			t.Errorf("verify artifact = %+v, %v", got, err)
+		}
+	})
+}
+
+// gateTestTime returns distinct instants so handoff ordering is deterministic.
+func gateTestTime(step int) time.Time {
+	return time.Date(2026, 9, 4, 12, 0, step, 0, time.UTC)
 }

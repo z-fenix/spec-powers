@@ -79,6 +79,22 @@ func toTaskDTO(m *domain.TaskMapping) taskDTO {
 	}
 }
 
+type handoffDTO struct {
+	ID        string `json:"id"`
+	ChangeID  string `json:"change_id"`
+	FromPhase string `json:"from_phase"`
+	ToPhase   string `json:"to_phase"`
+	CreatedBy string `json:"created_by"`
+	CreatedAt string `json:"created_at"`
+}
+
+func toHandoffDTO(h *domain.ChangeHandoff) handoffDTO {
+	return handoffDTO{
+		ID: h.ID, ChangeID: h.ChangeID, FromPhase: h.FromPhase, ToPhase: h.ToPhase,
+		CreatedBy: h.CreatedBy, CreatedAt: h.CreatedAt.UTC().Format(timeFormat),
+	}
+}
+
 func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
 	r.Use(auth.RequireAuth(h.tokens))
@@ -89,6 +105,10 @@ func (h *Handler) Routes() http.Handler {
 		r.Get("/artifacts", h.listArtifacts)
 		r.Get("/artifacts/{kind}", h.getArtifact)
 		r.Get("/tasks", h.listTasks)
+		r.Get("/guard", h.guardStatus)
+		r.Post("/guard", h.advancePhase)
+		r.Post("/verify", h.submitVerify)
+		r.Post("/archive", h.archive)
 	})
 	return r
 }
@@ -195,4 +215,64 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 		dtos = append(dtos, toTaskDTO(&list[i]))
 	}
 	httpapi.JSON(w, http.StatusOK, map[string]any{"tasks": dtos})
+}
+
+// guardStatus returns the change's gate evaluation without mutating state.
+func (h *Handler) guardStatus(w http.ResponseWriter, r *http.Request) {
+	report, err := h.svc.GuardStatus(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "changeID"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	httpapi.JSON(w, http.StatusOK, map[string]any{"guard": report})
+}
+
+// advancePhase runs the guard-checked transition to the next classic phase.
+func (h *Handler) advancePhase(w http.ResponseWriter, r *http.Request) {
+	change, handoff, err := h.svc.AdvancePhase(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "changeID"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	httpapi.JSON(w, http.StatusOK, map[string]any{"change": toChangeDTO(change), "handoff": toHandoffDTO(handoff)})
+}
+
+type submitVerifyRequest struct {
+	Content string `json:"content"`
+}
+
+// submitVerify stores a verify report; only result: pass releases the
+// archive gate.
+func (h *Handler) submitVerify(w http.ResponseWriter, r *http.Request) {
+	var req submitVerifyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpapi.Error(w, httpapi.ErrInvalid("body must be JSON with content"))
+		return
+	}
+	if req.Content == "" {
+		httpapi.Error(w, httpapi.ErrInvalid("content is required"))
+		return
+	}
+	a, passed, err := h.svc.SubmitVerifyReport(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "changeID"), req.Content)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	result := "fail"
+	if passed {
+		result = "pass"
+	}
+	httpapi.JSON(w, http.StatusCreated, map[string]any{
+		"artifact": toArtifactDTO(a), "result": result, "passed": passed,
+	})
+}
+
+// archive closes out the change after all gates pass.
+func (h *Handler) archive(w http.ResponseWriter, r *http.Request) {
+	c, err := h.svc.Archive(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "changeID"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	httpapi.JSON(w, http.StatusOK, map[string]any{"change": toChangeDTO(c)})
 }

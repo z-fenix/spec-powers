@@ -142,6 +142,18 @@ type Change struct {
 	UpdatedAt time.Time
 }
 
+// ChangeHandoff records one guard-approved phase advance of a change: the
+// flow moved from FromPhase to ToPhase. The latest handoff is the proof of
+// how the change entered its current phase.
+type ChangeHandoff struct {
+	ID        string
+	ChangeID  string
+	FromPhase string
+	ToPhase   string
+	CreatedBy string
+	CreatedAt time.Time
+}
+
 // Artifact is one version of a markdown deliverable produced by a change.
 // Version is assigned per (change, kind), starting at 1.
 type Artifact struct {

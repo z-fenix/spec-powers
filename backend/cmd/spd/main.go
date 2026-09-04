@@ -66,6 +66,7 @@ func main() {
 		issueHandler.Routes(),
 	)
 	workflowService := workflow.NewService(changes, artifacts, taskMappings, issues, projects)
+	workflowService = workflowService.WithWaker(issues)
 	if cfg.LLMAPIKey != "" && cfg.LLMModel != "" {
 		promptTemplates, err := workflow.LoadTemplates(cfg.LLMPromptDir)
 		if err != nil {

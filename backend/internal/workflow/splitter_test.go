@@ -32,6 +32,20 @@ type splitChanges struct {
 	existingByIssue map[string]*domain.Change
 	created         *domain.Change
 	updated         []*domain.Change
+	handoffs        []domain.ChangeHandoff
+	handoffSeq      int
+}
+
+func (f *splitChanges) CreateChangeHandoff(_ context.Context, h *domain.ChangeHandoff) (*domain.ChangeHandoff, error) {
+	out := *h
+	f.handoffSeq++
+	out.ID = fmt.Sprintf("h-%d", f.handoffSeq)
+	f.handoffs = append(f.handoffs, out)
+	return &out, nil
+}
+
+func (f *splitChanges) ListChangeHandoffs(_ context.Context, changeID string) ([]domain.ChangeHandoff, error) {
+	return f.handoffs, nil
 }
 
 func (f *splitChanges) CreateChange(_ context.Context, c *domain.Change) (*domain.Change, error) {
@@ -225,6 +239,28 @@ func TestSplitAdvancesChangePhase(t *testing.T) {
 	last := changes.updated[len(changes.updated)-1]
 	if last.Phase != KindTasks {
 		t.Errorf("last phase update = %q, want tasks", last.Phase)
+	}
+}
+
+func TestSplitWritesHandoffOnPhaseAdvance(t *testing.T) {
+	client := stageOneLLM(tasksJSON)
+	changes := &splitChanges{}
+	s := newSplitter(t, client, changes, &splitArtifacts{}, &splitMappings{}, &splitCreator{})
+
+	if _, err := s.Run(context.Background(), "bob", "i1"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	want := []struct{ from, to string }{
+		{KindProposal, KindSpecs}, {KindSpecs, KindDesign}, {KindDesign, KindTasks},
+	}
+	if len(changes.handoffs) != len(want) {
+		t.Fatalf("handoffs = %d, want %d (%+v)", len(changes.handoffs), len(want), changes.handoffs)
+	}
+	for i, w := range want {
+		h := changes.handoffs[i]
+		if h.FromPhase != w.from || h.ToPhase != w.to || h.CreatedBy != "bob" || h.ChangeID != "c-new" {
+			t.Errorf("handoff[%d] = %+v, want %s->%s", i, h, w.from, w.to)
+		}
 	}
 }
 

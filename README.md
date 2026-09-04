@@ -89,8 +89,12 @@ cd frontend && npm test -- --run && npm run build
 | GET | `/changes?issue_id={iid}` | issue 的工作流实例（classic 拆分，一 issue 一 change） |
 | GET | `/changes/{cid}` | change 详情（project_id / issue_id / phase / status） |
 | GET | `/changes/{cid}/artifacts` | 产物列表（每类 kind 的最新版本，按 proposal→specs→design→tasks 排序） |
-| GET | `/changes/{cid}/artifacts/{kind}` | 读取产物 markdown（kind: proposal/specs/design/tasks；`?version=N` 指定版本，缺省最新） |
+| GET | `/changes/{cid}/artifacts/{kind}` | 读取产物 markdown（kind: proposal/specs/design/tasks/verify；`?version=N` 指定版本，缺省最新） |
 | GET | `/changes/{cid}/tasks` | tasks 条目与子 issue 的映射（按 stage、position 排序） |
+| GET | `/changes/{cid}/guard` | 门禁评估报告（phase 合法性 / handoff 新鲜度 / verify 通过 / 可推进 / 可归档，附未通过原因） |
+| POST | `/changes/{cid}/guard` | 门禁推进：校验通过后进入下一 phase 并写入 handoff 记录 |
+| POST | `/changes/{cid}/verify` | 提交 verify 报告（body: `{content}`，YAML；`result` 必须为 pass/fail，最新报告为 pass 才放行归档） |
+| POST | `/changes/{cid}/archive` | 归档 change（要求 active、tasks 阶段、产物链自洽、handoff 新鲜、verify pass；归档后按父子对唤醒父 issue 负责人验收） |
 
 ### Issue 状态机
 
@@ -99,6 +103,15 @@ cd frontend && npm test -- --run && npm run build
 合法流转：backlog→todo；todo→in_progress/blocked；in_progress→in_review/blocked/todo；in_review→done/in_progress；blocked→in_progress/todo；任意非终态→cancelled。其余流转（含终态出入）返回 400。
 
 子 issue 全部到达终态时，父 issue 记录一条唤醒（`issue_wakeups`，按父子对幂等），供后续 agent 运行时消费。
+
+### Classic 门禁（guard / verify / archive）
+
+change 的 phase 顺序为 proposal→specs→design→tasks，AI 拆分器每次推进都会写入 handoff 记录（迁移 `0007_change_gates`）。门禁规则：
+
+- **phase 合法性**：当前 phase 及其之前的每个 phase 都必须有产物（禁止非法空跳）；
+- **handoff 新鲜度**：进入当前 phase 必须有对应的 handoff 记录，且此前各 phase 的产物未在 handoff 之后重新生成（过期即拦截）；
+- **verify 报告**：`POST /changes/{cid}/verify` 提交 YAML 报告，`result` 必须为 `pass` 或 `fail`；最新一份报告为 pass 才放行归档；
+- **归档**：全部门禁通过后 `POST /changes/{cid}/archive` 置 change 为 archived，并联动父 issue 收尾——若 change 所属 issue 存在父 issue，按 Multica 一致的规则记录父唤醒，由父 issue 负责人确认验收。
 
 错误统一信封：`{"error":{"code":"...","message":"..."}}`。
 

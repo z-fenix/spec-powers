@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"specpowers/backend/internal/domain"
@@ -12,8 +13,10 @@ import (
 // ---- fakes ----
 
 type fakeChanges struct {
-	byID    map[string]*domain.Change
-	byIssue map[string]*domain.Change
+	byID       map[string]*domain.Change
+	byIssue    map[string]*domain.Change
+	handoffs   map[string][]domain.ChangeHandoff // changeID -> newest first
+	handoffSeq int
 }
 
 func (f *fakeChanges) CreateChange(_ context.Context, c *domain.Change) (*domain.Change, error) {
@@ -21,7 +24,28 @@ func (f *fakeChanges) CreateChange(_ context.Context, c *domain.Change) (*domain
 }
 
 func (f *fakeChanges) UpdateChange(_ context.Context, c *domain.Change) (*domain.Change, error) {
-	panic("not used in service tests")
+	stored, ok := f.byID[c.ID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	*stored = *c
+	out := *c
+	return &out, nil
+}
+
+func (f *fakeChanges) CreateChangeHandoff(_ context.Context, h *domain.ChangeHandoff) (*domain.ChangeHandoff, error) {
+	out := *h
+	f.handoffSeq++
+	out.ID = fmt.Sprintf("h-%d", f.handoffSeq)
+	f.handoffs[h.ChangeID] = append([]domain.ChangeHandoff{out}, f.handoffs[h.ChangeID]...)
+	return &out, nil
+}
+
+func (f *fakeChanges) ListChangeHandoffs(_ context.Context, changeID string) ([]domain.ChangeHandoff, error) {
+	list := f.handoffs[changeID]
+	out := make([]domain.ChangeHandoff, len(list))
+	copy(out, list)
+	return out, nil
 }
 
 func (f *fakeChanges) GetChange(_ context.Context, id string) (*domain.Change, error) {
@@ -49,7 +73,26 @@ type fakeArtifacts struct {
 }
 
 func (f *fakeArtifacts) CreateArtifact(_ context.Context, a *domain.Artifact) (*domain.Artifact, error) {
-	panic("not used in service tests")
+	out := *a
+	out.Version = 1
+	if versions := f.byKind[a.Kind]; len(versions) > 0 {
+		out.Version = versions[0].Version + 1
+	}
+	out.ID = fmt.Sprintf("a-%s-v%d", a.Kind, out.Version)
+	f.byKind[a.Kind] = append([]domain.Artifact{out}, f.byKind[a.Kind]...)
+	// keep the latest-per-kind list in sync
+	latest := f.latest[a.ChangeID]
+	replaced := false
+	for i := range latest {
+		if latest[i].Kind == a.Kind {
+			latest[i] = out
+			replaced = true
+		}
+	}
+	if !replaced {
+		f.latest[a.ChangeID] = append(latest, out)
+	}
+	return &out, nil
 }
 
 func (f *fakeArtifacts) GetArtifact(_ context.Context, changeID, kind string, version int) (*domain.Artifact, error) {
@@ -148,7 +191,8 @@ type fixture struct {
 }
 
 func newFixture() *fixture {
-	changes := &fakeChanges{byID: map[string]*domain.Change{}, byIssue: map[string]*domain.Change{}}
+	changes := &fakeChanges{byID: map[string]*domain.Change{}, byIssue: map[string]*domain.Change{},
+		handoffs: map[string][]domain.ChangeHandoff{}}
 	artifacts := &fakeArtifacts{latest: map[string][]domain.Artifact{}, byKind: map[string][]domain.Artifact{}, missing: map[string]bool{}}
 	mappings := &fakeMappings{byChange: map[string][]domain.TaskMapping{}}
 	projects := &fakeProjects{existing: map[string]bool{"p1": true}, members: map[string]string{

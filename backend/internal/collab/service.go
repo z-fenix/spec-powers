@@ -12,6 +12,7 @@ import (
 
 	"specpowers/backend/internal/domain"
 	"specpowers/backend/internal/httpapi"
+	"specpowers/backend/internal/notification"
 	"specpowers/backend/internal/store"
 )
 
@@ -41,6 +42,7 @@ type Service struct {
 	comments    store.CommentStore
 	attachments store.AttachmentStore
 	metadata    store.IssueMetadataStore
+	notifier    notification.Sink
 
 	// AttachmentDir is the local directory files are stored under;
 	// StoragePath values are relative to it.
@@ -59,6 +61,13 @@ func NewService(issues issueLookup, projects projectAccess, comments store.Comme
 		AttachmentDir:      attachmentDir,
 		MaxAttachmentBytes: MaxAttachmentBytes,
 	}
+}
+
+// WithNotifier attaches a notification sink; comment creation then notifies
+// the issue's assignee (unless the author is the assignee themself).
+func (s *Service) WithNotifier(n notification.Sink) *Service {
+	s.notifier = n
+	return s
 }
 
 // requireProjectIssue mirrors the issue domain's access rule: the issue must
@@ -94,7 +103,8 @@ func (s *Service) requireProjectIssue(ctx context.Context, userID, issueID strin
 // Threads are single-level: the parent must be a root comment on the same
 // issue.
 func (s *Service) AddComment(ctx context.Context, userID, issueID, parentCommentID, content string) (*domain.IssueComment, error) {
-	if _, err := s.requireProjectIssue(ctx, userID, issueID); err != nil {
+	i, err := s.requireProjectIssue(ctx, userID, issueID)
+	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(content) == "" {
@@ -126,7 +136,28 @@ func (s *Service) AddComment(ctx context.Context, userID, issueID, parentComment
 	if err != nil {
 		return nil, httpapi.ErrInternal("create comment failed")
 	}
+	s.notifyComment(ctx, i, userID, c.Content)
 	return c, nil
+}
+
+// notifyComment tells the issue's assignee about a new comment; self-comments
+// stay silent.
+func (s *Service) notifyComment(ctx context.Context, i *domain.Issue, authorID, content string) {
+	if s.notifier == nil || i.AssigneeID == "" || i.AssigneeID == authorID {
+		return
+	}
+	body := content
+	if len(body) > 200 {
+		body = body[:200] + "…"
+	}
+	s.notifier.Notify(ctx, notification.NotifyInput{
+		UserID:    i.AssigneeID,
+		Kind:      "comment",
+		Title:     "New comment on: " + i.Title,
+		Body:      body,
+		IssueID:   i.ID,
+		ProjectID: i.ProjectID,
+	})
 }
 
 func (s *Service) ListComments(ctx context.Context, userID, issueID string) ([]domain.IssueComment, error) {

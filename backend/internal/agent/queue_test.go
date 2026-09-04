@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"strings"
 	"testing"
 	"time"
 
 	"specpowers/backend/internal/domain"
+	"specpowers/backend/internal/notification"
 	"specpowers/backend/internal/store"
 )
 
@@ -315,5 +317,114 @@ func TestTriggerUnknownAgentIsNoop(t *testing.T) {
 	trig := NewTrigger(newFakeAgents(), newFakeRuns())
 	if err := trig.OnIssueAssigned(context.Background(), &domain.Issue{ID: "i1", AssigneeID: "ghost"}); err != nil {
 		t.Fatalf("unknown agent assignee: %v", err)
+	}
+}
+
+// ---- run completion notifications ----
+
+type queueIssueLookup struct {
+	byID map[string]*domain.Issue
+}
+
+func (f *queueIssueLookup) GetIssue(_ context.Context, id string) (*domain.Issue, error) {
+	if i, ok := f.byID[id]; ok {
+		return i, nil
+	}
+	return nil, store.ErrNotFound
+}
+
+type recordingSink struct {
+	mu    sync.Mutex
+	calls []notification.NotifyInput
+}
+
+func (r *recordingSink) Notify(_ context.Context, in notification.NotifyInput) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, in)
+}
+
+func TestRunOneNotifiesIssueAssigneeOnCompletion(t *testing.T) {
+	runs := newFakeRuns()
+	agents := newFakeAgents()
+	ctx := context.Background()
+	if _, err := agents.CreateAgent(ctx, &domain.Agent{ID: "a1", Name: "A"}); err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+	issues := &queueIssueLookup{byID: map[string]*domain.Issue{
+		"i1": {ID: "i1", Title: "target", AssigneeID: "assignee-1"},
+	}}
+	sink := &recordingSink{}
+
+	q := NewQueue(runs, &fakeLogs{}, agents, &fakeExec{}).WithNotifier(sink, issues)
+	if _, err := q.Enqueue(ctx, "a1", "i1", "manual"); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	if ran, err := q.RunOne(ctx); err != nil || !ran {
+		t.Fatalf("RunOne: %v %v", ran, err)
+	}
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if len(sink.calls) != 1 {
+		t.Fatalf("got %d notifications, want 1", len(sink.calls))
+	}
+	in := sink.calls[0]
+	if in.UserID != "assignee-1" || in.Kind != "run_finished" || in.IssueID != "i1" {
+		t.Fatalf("notification = %+v", in)
+	}
+}
+
+func TestRunOneNotifiesAssigneeOnFailure(t *testing.T) {
+	runs := newFakeRuns()
+	agents := newFakeAgents()
+	ctx := context.Background()
+	if _, err := agents.CreateAgent(ctx, &domain.Agent{ID: "a1", Name: "A"}); err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+	issues := &queueIssueLookup{byID: map[string]*domain.Issue{
+		"i1": {ID: "i1", Title: "target", AssigneeID: "assignee-1"},
+	}}
+	sink := &recordingSink{}
+
+	q := NewQueue(runs, &fakeLogs{}, agents, &fakeExec{err: errors.New("boom")}).WithNotifier(sink, issues)
+	if _, err := q.Enqueue(ctx, "a1", "i1", "manual"); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	if ran, err := q.RunOne(ctx); err != nil || !ran {
+		t.Fatalf("RunOne: %v %v", ran, err)
+	}
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if len(sink.calls) != 1 {
+		t.Fatalf("got %d notifications, want 1", len(sink.calls))
+	}
+	if sink.calls[0].Title == "" || !strings.Contains(sink.calls[0].Body, "boom") {
+		t.Fatalf("failure notification missing error: %+v", sink.calls[0])
+	}
+}
+
+func TestRunOneSkipsNotificationWithoutAssignee(t *testing.T) {
+	runs := newFakeRuns()
+	agents := newFakeAgents()
+	ctx := context.Background()
+	if _, err := agents.CreateAgent(ctx, &domain.Agent{ID: "a1", Name: "A"}); err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+	issues := &queueIssueLookup{byID: map[string]*domain.Issue{
+		"i1": {ID: "i1", Title: "target"},
+	}}
+	sink := &recordingSink{}
+
+	q := NewQueue(runs, &fakeLogs{}, agents, &fakeExec{}).WithNotifier(sink, issues)
+	if _, err := q.Enqueue(ctx, "a1", "i1", "manual"); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	if ran, err := q.RunOne(ctx); err != nil || !ran {
+		t.Fatalf("RunOne: %v %v", ran, err)
+	}
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if len(sink.calls) != 0 {
+		t.Fatalf("unexpected notifications: %+v", sink.calls)
 	}
 }

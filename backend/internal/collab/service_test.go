@@ -11,6 +11,7 @@ import (
 
 	"specpowers/backend/internal/domain"
 	"specpowers/backend/internal/httpapi"
+	"specpowers/backend/internal/notification"
 	"specpowers/backend/internal/store"
 )
 
@@ -551,4 +552,59 @@ func TestListAndDeleteMetadata(t *testing.T) {
 		err = f.svc.DeleteMetadata(ctx, "mallory", "i1", "b_key")
 		requireStatus(t, err, 403)
 	})
+}
+
+// ---- comment notifications ----
+
+type recordingNotifier struct {
+	calls []notification.NotifyInput
+}
+
+func (r *recordingNotifier) Notify(_ context.Context, in notification.NotifyInput) {
+	r.calls = append(r.calls, in)
+}
+
+func notifierFixture(t *testing.T, assignee string) (*fixture, *recordingNotifier) {
+	t.Helper()
+	dir := t.TempDir()
+	issues := &fakeIssues{byID: map[string]*domain.Issue{
+		"i1": {ID: "i1", ProjectID: "p1", Title: "target issue", AssigneeID: assignee},
+	}}
+	projects := &fakeProjects{
+		existing: map[string]bool{"p1": true},
+		members:  map[string]string{"p1|alice": "owner"},
+	}
+	svc := NewService(issues, projects, &fakeComments{byID: map[string]*domain.IssueComment{}},
+		&fakeAttachments{byID: map[string]*domain.IssueAttachment{}},
+		&fakeMetadata{entries: map[string]domain.IssueMetadata{}}, dir)
+	rec := &recordingNotifier{}
+	svc = svc.WithNotifier(rec)
+	return &fixture{svc: svc}, rec
+}
+
+func TestAddCommentNotifiesAssignee(t *testing.T) {
+	f, rec := notifierFixture(t, "agent1")
+	if _, err := f.svc.AddComment(context.Background(), "alice", "i1", "", "hello there"); err != nil {
+		t.Fatalf("AddComment: %v", err)
+	}
+	if len(rec.calls) != 1 {
+		t.Fatalf("got %d notifications, want 1", len(rec.calls))
+	}
+	in := rec.calls[0]
+	if in.UserID != "agent1" || in.Kind != "comment" || in.IssueID != "i1" {
+		t.Fatalf("notification = %+v", in)
+	}
+	if in.Title == "" || in.Body != "hello there" {
+		t.Fatalf("title/body: %q / %q", in.Title, in.Body)
+	}
+}
+
+func TestAddCommentSkipsNotifyingCommentAuthor(t *testing.T) {
+	f, rec := notifierFixture(t, "alice")
+	if _, err := f.svc.AddComment(context.Background(), "alice", "i1", "", "self comment"); err != nil {
+		t.Fatalf("AddComment: %v", err)
+	}
+	if len(rec.calls) != 0 {
+		t.Fatalf("unexpected notifications: %+v", rec.calls)
+	}
 }

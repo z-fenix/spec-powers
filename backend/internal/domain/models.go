@@ -217,3 +217,19 @@ type TaskMapping struct {
 	Position   int
 	CreatedAt  time.Time
 }
+
+// Notification is one in-app notification for a user. Kind describes the
+// event source ("comment", "run_finished", "phase_advanced"); IssueID and
+// ProjectID link the notification to the issue it is about so UIs can deep
+// link to it. ReadAt is nil until the user marks it read.
+type Notification struct {
+	ID        string
+	UserID    string
+	Kind      string
+	Title     string
+	Body      string
+	IssueID   string
+	ProjectID string
+	ReadAt    *time.Time
+	CreatedAt time.Time
+}

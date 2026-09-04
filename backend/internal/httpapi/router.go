@@ -31,6 +31,7 @@ type Deps struct {
 	Skills  http.Handler
 	Agents  http.Handler
 	Runs    http.Handler
+	Notifs  http.Handler
 }
 
 func NewRouter(deps Deps) http.Handler {
@@ -59,6 +60,9 @@ func NewRouter(deps Deps) http.Handler {
 		}
 		if deps.Runs != nil {
 			r.Mount("/runs", http.StripPrefix("/api/v1/runs", deps.Runs))
+		}
+		if deps.Notifs != nil {
+			r.Mount("/notifications", http.StripPrefix("/api/v1/notifications", deps.Notifs))
 		}
 		r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 			Error(w, ErrNotFound("route not found"))

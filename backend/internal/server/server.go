@@ -19,6 +19,7 @@ import (
 	"specpowers/backend/internal/httpapi"
 	"specpowers/backend/internal/issue"
 	"specpowers/backend/internal/llm"
+	"specpowers/backend/internal/notification"
 	"specpowers/backend/internal/project"
 	"specpowers/backend/internal/skill"
 	"specpowers/backend/internal/store/postgres"
@@ -97,11 +98,14 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	runLogs := postgres.NewRunLogStore(pool)
 
 	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
+	notificationStore := postgres.NewNotificationStore(pool)
+	notificationSvc := notification.NewService(notificationStore)
 	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
 	issueService := issue.NewService(issues, projects, users)
 	issueHandler := issue.NewHandler(issueService, tokens).WithCollab(
 		collab.NewHandler(
-			collab.NewService(issues, projects, comments, attachments, metadata, cfg.AttachmentDir),
+			collab.NewService(issues, projects, comments, attachments, metadata, cfg.AttachmentDir).
+				WithNotifier(notificationSvc),
 			tokens,
 		).Routes(),
 	)
@@ -149,6 +153,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	}
 	workflowHandler := workflow.NewHandler(workflowService, tokens)
 	skillHandler := skill.NewHandler(skillRegistry, tokens)
+	notificationHandler := notification.NewHandler(notificationSvc, tokens)
 
 	// Agent runtime: definitions, run queue, LLM tool-loop executor and the
 	// issue-service trigger that enqueues runs on assignment / status change.
@@ -163,7 +168,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 		WorkDir:  cfg.AgentWorkDir,
 		Logs:     runLogs,
 	})
-	queue := agent.NewQueue(runs, runLogs, agents, executor)
+	queue := agent.NewQueue(runs, runLogs, agents, executor).WithNotifier(notificationSvc, issues)
 	issueService = issueService.WithRunTrigger(agent.NewTrigger(agents, runs))
 	agentHandler := agent.NewHandler(agentSvc, queue, runs, runLogs, issues, tokens)
 	workerCtx, stopWorker := context.WithCancel(context.Background())
@@ -177,6 +182,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 			Skills:  skillHandler.Routes(),
 			Agents:  agentHandler.AgentRoutes(),
 			Runs:    agentHandler.RunRoutes(),
+			Notifs:  notificationHandler.Routes(),
 		}),
 		pool:       pool,
 		ownsPool:   ownsPool,

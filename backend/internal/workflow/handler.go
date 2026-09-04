@@ -104,6 +104,7 @@ func (h *Handler) Routes() http.Handler {
 		r.Get("/", h.get)
 		r.Get("/artifacts", h.listArtifacts)
 		r.Get("/artifacts/{kind}", h.getArtifact)
+		r.Get("/artifacts/{kind}/versions", h.listArtifactVersions)
 		r.Post("/artifacts/{kind}", h.writeArtifact)
 		r.Get("/tasks", h.listTasks)
 		r.Get("/guard", h.guardStatus)
@@ -208,6 +209,21 @@ func (h *Handler) getArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpapi.JSON(w, http.StatusOK, map[string]any{"artifact": toArtifactDTO(a)})
+}
+
+// listArtifactVersions returns every version of one kind, newest first.
+func (h *Handler) listArtifactVersions(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.ListArtifactVersions(r.Context(), auth.UserIDFrom(r.Context()),
+		chi.URLParam(r, "changeID"), chi.URLParam(r, "kind"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	dtos := make([]artifactDTO, 0, len(list))
+	for i := range list {
+		dtos = append(dtos, toArtifactDTO(&list[i]))
+	}
+	httpapi.JSON(w, http.StatusOK, map[string]any{"artifacts": dtos})
 }
 
 type writeArtifactRequest struct {

@@ -9,6 +9,7 @@ import (
 	"specpowers/backend/internal/domain"
 	"specpowers/backend/internal/httpapi"
 	"specpowers/backend/internal/issue"
+	"specpowers/backend/internal/notification"
 	"specpowers/backend/internal/store"
 )
 
@@ -22,15 +23,55 @@ type RunExecutor interface {
 // claims them FIFO and drives the executor through the lifecycle
 // queued → running → done | failed.
 type Queue struct {
-	runs   store.RunStore
-	logs   store.RunLogStore
-	agents store.AgentStore
-	exec   RunExecutor
-	poll   time.Duration
+	runs      store.RunStore
+	logs      store.RunLogStore
+	agents    store.AgentStore
+	exec      RunExecutor
+	poll      time.Duration
+	notifier  notification.Sink
+	notIssues issueAssigneeLookup
+}
+
+// issueAssigneeLookup lets the queue notify the issue's assignee when a run
+// finishes.
+type issueAssigneeLookup interface {
+	GetIssue(ctx context.Context, id string) (*domain.Issue, error)
 }
 
 func NewQueue(runs store.RunStore, logs store.RunLogStore, agents store.AgentStore, exec RunExecutor) *Queue {
 	return &Queue{runs: runs, logs: logs, agents: agents, exec: exec, poll: time.Second}
+}
+
+// WithNotifier attaches a notification sink and the issue lookup used to
+// resolve assignees; finished runs then notify the issue's assignee.
+func (q *Queue) WithNotifier(n notification.Sink, issues issueAssigneeLookup) *Queue {
+	q.notifier = n
+	q.notIssues = issues
+	return q
+}
+
+// notifyRunFinished tells the issue's assignee that a run reached its final
+// state; issues without an assignee stay silent.
+func (q *Queue) notifyRunFinished(ctx context.Context, run *domain.Run, status, errMsg string) {
+	if q.notifier == nil || q.notIssues == nil {
+		return
+	}
+	i, err := q.notIssues.GetIssue(ctx, run.IssueID)
+	if err != nil || i.AssigneeID == "" {
+		return
+	}
+	statusLabel := "finished"
+	if status == "failed" {
+		statusLabel = "failed"
+	}
+	q.notifier.Notify(ctx, notification.NotifyInput{
+		UserID:    i.AssigneeID,
+		Kind:      "run_finished",
+		Title:     "Agent run " + statusLabel + " on: " + i.Title,
+		Body:      errMsg,
+		IssueID:   i.ID,
+		ProjectID: i.ProjectID,
+	})
 }
 
 // WithPoll overrides the worker polling interval (tests).
@@ -62,11 +103,13 @@ func (q *Queue) RunOne(ctx context.Context) (bool, error) {
 		if _, ferr := q.runs.FinishRun(ctx, run.ID, "failed", err.Error()); ferr != nil {
 			return true, ferr
 		}
+		q.notifyRunFinished(ctx, run, "failed", err.Error())
 		return true, nil
 	}
 	if _, ferr := q.runs.FinishRun(ctx, run.ID, "done", ""); ferr != nil {
 		return true, ferr
 	}
+	q.notifyRunFinished(ctx, run, "done", "")
 	return true, nil
 }
 

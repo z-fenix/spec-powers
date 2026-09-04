@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"specpowers/backend/internal/domain"
 )
@@ -162,4 +163,20 @@ type TaskMappingStore interface {
 	// given items, all bound to the tasks artifact version artifactID.
 	SetTaskMappings(ctx context.Context, changeID, artifactID string, items []domain.TaskMapping) error
 	ListTaskMappings(ctx context.Context, changeID string) ([]domain.TaskMapping, error)
+}
+
+type NotificationStore interface {
+	CreateNotification(ctx context.Context, n *domain.Notification) (*domain.Notification, error)
+	// ListNotifications returns the user's notifications, newest first.
+	ListNotifications(ctx context.Context, userID string, unreadOnly bool) ([]domain.Notification, error)
+	// CountUnreadNotifications returns how many of the user's notifications
+	// are still unread.
+	CountUnreadNotifications(ctx context.Context, userID string) (int, error)
+	// MarkNotificationRead stamps read_at on the user's unread notification
+	// and returns the updated row; ErrNotFound when the notification does
+	// not exist or is already read.
+	MarkNotificationRead(ctx context.Context, userID, id string, readAt time.Time) (*domain.Notification, error)
+	// MarkAllNotificationsRead stamps read_at on every unread notification
+	// of the user and returns how many rows changed.
+	MarkAllNotificationsRead(ctx context.Context, userID string, readAt time.Time) (int, error)
 }

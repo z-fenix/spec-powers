@@ -190,6 +190,22 @@ func (s *Service) GetArtifact(ctx context.Context, userID, changeID, kind string
 	return a, nil
 }
 
+// ListArtifactVersions returns every version of one artifact kind, newest
+// first, so viewers can switch between versions.
+func (s *Service) ListArtifactVersions(ctx context.Context, userID, changeID, kind string) ([]domain.Artifact, error) {
+	if !IsValidKind(kind) {
+		return nil, httpapi.ErrInvalid("unknown artifact kind: " + kind)
+	}
+	if _, err := s.requireChangeRole(ctx, userID, changeID); err != nil {
+		return nil, err
+	}
+	list, err := s.artifacts.ListArtifactVersions(ctx, changeID, kind)
+	if err != nil {
+		return nil, httpapi.ErrInternal("list artifact versions failed")
+	}
+	return list, nil
+}
+
 // ListTaskMappings returns the tasks-artifact entries mapped to sub-issues.
 func (s *Service) ListTaskMappings(ctx context.Context, userID, changeID string) ([]domain.TaskMapping, error) {
 	if _, err := s.requireChangeRole(ctx, userID, changeID); err != nil {

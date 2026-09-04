@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../api/client'
 import type { Project } from './ProjectsPage'
 
@@ -93,6 +93,11 @@ export function ProjectDetailPage() {
         {project.archived && <span className="badge">已归档</span>}
       </h2>
       {project.description && <p className="project-desc">{project.description}</p>}
+      <p>
+        <Link data-testid="board-link" to={`/projects/${id}/board`}>
+          Issue 看板
+        </Link>
+      </p>
       {error && (
         <p role="alert" data-testid="detail-error">
           {error}

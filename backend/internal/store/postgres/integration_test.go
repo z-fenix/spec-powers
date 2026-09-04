@@ -45,7 +45,7 @@ func TestMigrateIntegration(t *testing.T) {
 		t.Fatalf("second migrate (must be idempotent): %v", err)
 	}
 
-	for _, table := range []string{"users", "workspaces", "members", "roles", "projects", "project_members", "project_resources", "project_contexts", "issues", "issue_wakeups", "issue_comments", "issue_attachments", "issue_metadata"} {
+	for _, table := range []string{"users", "workspaces", "members", "roles", "projects", "project_members", "project_resources", "project_contexts", "issues", "issue_wakeups", "issue_comments", "issue_attachments", "issue_metadata", "changes", "artifacts", "task_mappings"} {
 		var n int
 		if err := pool.QueryRow(ctx, "SELECT count(*) FROM information_schema.tables WHERE table_name=$1", table).Scan(&n); err != nil {
 			t.Fatalf("query tables: %v", err)

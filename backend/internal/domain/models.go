@@ -127,3 +127,42 @@ type IssueMetadata struct {
 	Type      string
 	UpdatedAt time.Time
 }
+
+// Change is a workflow instance: the classic split flow (proposal → specs →
+// design → tasks) running for one parent issue. Phase is the flow's current
+// step; Status is "active" until the change is archived.
+type Change struct {
+	ID        string
+	ProjectID string
+	IssueID   string
+	Phase     string
+	Status    string
+	CreatedBy string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// Artifact is one version of a markdown deliverable produced by a change.
+// Version is assigned per (change, kind), starting at 1.
+type Artifact struct {
+	ID        string
+	ChangeID  string
+	Kind      string // "proposal" | "specs" | "design" | "tasks"
+	Version   int
+	Content   string
+	CreatedBy string
+	CreatedAt time.Time
+}
+
+// TaskMapping links one tasks-artifact entry to the sub-issue created for
+// it. ArtifactID pins the tasks artifact version the mapping came from.
+type TaskMapping struct {
+	ID         string
+	ChangeID   string
+	ArtifactID string
+	IssueID    string
+	Title      string
+	Stage      int
+	Position   int
+	CreatedAt  time.Time
+}

@@ -94,3 +94,31 @@ type IssueMetadataStore interface {
 	ListIssueMetadata(ctx context.Context, issueID string) ([]domain.IssueMetadata, error)
 	DeleteIssueMetadata(ctx context.Context, issueID, key string) error
 }
+
+type ChangeStore interface {
+	CreateChange(ctx context.Context, c *domain.Change) (*domain.Change, error)
+	GetChange(ctx context.Context, id string) (*domain.Change, error)
+	// GetChangeByIssue returns the change running for an issue; a change is
+	// unique per issue.
+	GetChangeByIssue(ctx context.Context, issueID string) (*domain.Change, error)
+}
+
+type ArtifactStore interface {
+	// CreateArtifact appends a new version; the version is assigned per
+	// (change_id, kind) starting at 1 and returned in the result.
+	CreateArtifact(ctx context.Context, a *domain.Artifact) (*domain.Artifact, error)
+	// GetArtifact fetches one version; version <= 0 means the latest.
+	GetArtifact(ctx context.Context, changeID, kind string, version int) (*domain.Artifact, error)
+	// ListArtifacts returns the change's latest artifact per kind, ordered
+	// proposal, specs, design, tasks.
+	ListArtifacts(ctx context.Context, changeID string) ([]domain.Artifact, error)
+	// ListArtifactVersions returns every version of one kind, newest first.
+	ListArtifactVersions(ctx context.Context, changeID, kind string) ([]domain.Artifact, error)
+}
+
+type TaskMappingStore interface {
+	// SetTaskMappings atomically replaces the change's mapping set with the
+	// given items, all bound to the tasks artifact version artifactID.
+	SetTaskMappings(ctx context.Context, changeID, artifactID string, items []domain.TaskMapping) error
+	ListTaskMappings(ctx context.Context, changeID string) ([]domain.TaskMapping, error)
+}

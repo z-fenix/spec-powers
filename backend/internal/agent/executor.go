@@ -41,6 +41,12 @@ type Executor struct {
 	workDir  string
 	checkout func(ctx context.Context, pointer, destDir string) error
 	logs     logAppender
+	// mentionHook fires after the agent posts a comment so comments can
+	// hand work to other agents via @-mentions.
+	mentionHook func(ctx context.Context, issueID, authorID, content string) error
+	// flow drives the classic workflow (change per issue, versioned
+	// artifacts, guard-checked phase advance). Nil keeps runs flow-less.
+	flow     FlowDriver
 	MaxTurns int
 }
 
@@ -54,6 +60,10 @@ type ExecutorDeps struct {
 	WorkDir  string
 	Checkout func(ctx context.Context, pointer, destDir string) error
 	Logs     logAppender
+	// MentionHook fires after the agent posts a comment (see mention.go).
+	MentionHook func(ctx context.Context, issueID, authorID, content string) error
+	// Flow drives the classic workflow (see flow.go).
+	Flow     FlowDriver
 	MaxTurns int
 }
 
@@ -63,16 +73,18 @@ func NewExecutor(deps ExecutorDeps) *Executor {
 		maxTurns = defaultMaxTurns
 	}
 	return &Executor{
-		issues:   deps.Issues,
-		comments: deps.Comments,
-		metadata: deps.Metadata,
-		projects: deps.Projects,
-		client:   deps.Client,
-		skills:   deps.Skills,
-		workDir:  deps.WorkDir,
-		checkout: deps.Checkout,
-		logs:     deps.Logs,
-		MaxTurns: maxTurns,
+		issues:      deps.Issues,
+		comments:    deps.Comments,
+		metadata:    deps.Metadata,
+		projects:    deps.Projects,
+		client:      deps.Client,
+		skills:      deps.Skills,
+		workDir:     deps.WorkDir,
+		checkout:    deps.Checkout,
+		logs:        deps.Logs,
+		mentionHook: deps.MentionHook,
+		flow:        deps.Flow,
+		MaxTurns:    maxTurns,
 	}
 }
 
@@ -90,7 +102,24 @@ func (e *Executor) Execute(ctx context.Context, run *domain.Run, agent *domain.A
 	metadata, _ := e.metadata.ListIssueMetadata(ctx, run.IssueID)
 	comments, _ := e.comments.ListComments(ctx, run.IssueID)
 
-	system := e.systemPrompt(agent)
+	// Classic workflow: every agent run is anchored to the issue's change;
+	// the phase's skill steers the loop and the flow tools advance it.
+	var change *domain.Change
+	var phaseSkill *skill.Skill
+	if e.flow != nil {
+		change, err = e.flow.EnsureChange(ctx, agent.ID, run.IssueID)
+		if err != nil {
+			return fmt.Errorf("ensure change: %w", err)
+		}
+		phaseSkill, err = e.flow.PhaseSkill(ctx, agent.ID, change)
+		if err != nil {
+			// A change past the flow (archived/failed) has no next skill;
+			// the run then just answers without flow tooling guidance.
+			phaseSkill = nil
+		}
+	}
+
+	system := e.systemPrompt(agent, change, phaseSkill)
 	task := e.taskPrompt(iss, metadata, comments)
 	transcript := []string{task}
 
@@ -122,10 +151,11 @@ func (e *Executor) Execute(ctx context.Context, run *domain.Run, agent *domain.A
 			}); err != nil {
 				return fmt.Errorf("post final comment: %w", err)
 			}
+			e.fireMentionHook(ctx, run.IssueID, agent.ID, action.Message)
 			return nil
 		}
 		e.appendLog(ctx, run.ID, logToolCall, action.Tool+" "+mustJSON(action.Args))
-		result := e.runTool(ctx, run, agent, iss, action)
+		result := e.runTool(ctx, run, agent, iss, change, action)
 		e.appendLog(ctx, run.ID, logToolResult, result)
 		transcript = append(transcript,
 			"You called tool "+action.Tool+".\nTOOL_RESULT:\n"+result+"\n\nContinue: reply with exactly one JSON object.")
@@ -144,6 +174,17 @@ func (e *Executor) appendLog(ctx context.Context, runID, kind, content string) {
 		return
 	}
 	_, _ = e.logs.AppendRunLog(ctx, &domain.RunLog{RunID: runID, Kind: kind, Content: content})
+}
+
+// fireMentionHook notifies the mention trigger about an agent-posted
+// comment; failures are logged and non-fatal.
+func (e *Executor) fireMentionHook(ctx context.Context, issueID, authorID, content string) {
+	if e.mentionHook == nil {
+		return
+	}
+	if err := e.mentionHook(ctx, issueID, authorID, content); err != nil {
+		e.appendLog(ctx, "", logError, "mention hook: "+err.Error())
+	}
 }
 
 // ---- actions ----
@@ -193,7 +234,7 @@ func parseAction(reply string) (*action, error) {
 
 // ---- tools ----
 
-func (e *Executor) runTool(ctx context.Context, run *domain.Run, agent *domain.Agent, iss *domain.Issue, a *action) string {
+func (e *Executor) runTool(ctx context.Context, run *domain.Run, agent *domain.Agent, iss *domain.Issue, change *domain.Change, a *action) string {
 	switch a.Tool {
 	case "read_issue":
 		metadata, _ := e.metadata.ListIssueMetadata(ctx, iss.ID)
@@ -201,6 +242,46 @@ func (e *Executor) runTool(ctx context.Context, run *domain.Run, agent *domain.A
 		return mustJSON(map[string]any{"issue": iss, "comments": comments, "metadata": metadata})
 	case "checkout_repo":
 		return e.toolCheckout(ctx, run, iss)
+	case "get_flow":
+		if change == nil {
+			return mustJSON(map[string]any{"error": "no classic flow configured"})
+		}
+		out := map[string]any{"change": change}
+		if e.flow != nil {
+			if sk, err := e.flow.PhaseSkill(ctx, agent.ID, change); err == nil {
+				out["next_skill"] = sk.Key
+			}
+		}
+		return mustJSON(out)
+	case "write_artifact":
+		kind, _ := a.Args["kind"].(string)
+		content, _ := a.Args["content"].(string)
+		art, err := e.flow.WriteArtifact(ctx, agent.ID, change, kind, content)
+		if err != nil {
+			return mustJSON(map[string]any{"error": err.Error()})
+		}
+		return mustJSON(map[string]any{"artifact": art})
+	case "advance_phase":
+		updated, err := e.flow.AdvancePhase(ctx, agent.ID, change)
+		if err != nil {
+			return mustJSON(map[string]any{"error": err.Error()})
+		}
+		*change = *updated
+		return mustJSON(map[string]any{"change": change})
+	case "submit_verify":
+		content, _ := a.Args["content"].(string)
+		art, err := e.flow.SubmitVerify(ctx, agent.ID, change, content)
+		if err != nil {
+			return mustJSON(map[string]any{"error": err.Error()})
+		}
+		return mustJSON(map[string]any{"artifact": art})
+	case "archive":
+		updated, err := e.flow.Archive(ctx, agent.ID, change)
+		if err != nil {
+			return mustJSON(map[string]any{"error": err.Error()})
+		}
+		*change = *updated
+		return mustJSON(map[string]any{"change": change})
 	case "post_comment":
 		content, _ := a.Args["content"].(string)
 		if strings.TrimSpace(content) == "" {
@@ -216,11 +297,25 @@ func (e *Executor) runTool(ctx context.Context, run *domain.Run, agent *domain.A
 		if err != nil {
 			return mustJSON(map[string]any{"error": err.Error()})
 		}
+		e.fireMentionHook(ctx, iss.ID, agent.ID, content)
 		return mustJSON(map[string]any{"comment_id": c.ID})
 	case "set_status":
 		status, _ := a.Args["status"].(string)
 		if !issue.CanTransition(iss.Status, status) {
 			return mustJSON(map[string]any{"error": "illegal status transition " + iss.Status + " -> " + status})
+		}
+		// Classic-flow gate: while the issue's change is active, the issue
+		// cannot leave the working statuses — finish the flow (verify,
+		// archive) first. Refusals are logged so the run record shows them.
+		if e.flow != nil && change != nil && change.Status == "active" &&
+			(status == issue.StatusInReview || status == issue.StatusDone) {
+			e.appendLog(ctx, run.ID, logError,
+				"classic flow gate: change "+change.ID+" is still active ("+change.Phase+
+					"); complete the workflow (write_artifact, advance_phase, submit_verify, archive) before moving the issue to "+status)
+			return mustJSON(map[string]any{
+				"error": "gate: the classic flow for this issue is still active (phase " + change.Phase +
+					"); call archive after the flow completes, then set_status",
+			})
 		}
 		updated := *iss
 		updated.Status = status
@@ -282,7 +377,7 @@ func gitClone(ctx context.Context, pointer, destDir string) error {
 
 // ---- prompts ----
 
-func (e *Executor) systemPrompt(agent *domain.Agent) string {
+func (e *Executor) systemPrompt(agent *domain.Agent, change *domain.Change, phaseSkill *skill.Skill) string {
 	var b strings.Builder
 	b.WriteString("You are " + agent.Name + ", an autonomous coding agent working on issues.\n")
 	if agent.Description != "" {
@@ -296,6 +391,17 @@ func (e *Executor) systemPrompt(agent *domain.Agent) string {
 			}
 		}
 	}
+	if change != nil {
+		b.WriteString("\n## Classic workflow (mandatory)\n")
+		b.WriteString("This issue runs the classic flow (proposal → specs → design → tasks) as change " + change.ID + ".\n")
+		b.WriteString("Current phase: " + change.Phase + " (change status: " + change.Status + ").\n")
+		if phaseSkill != nil {
+			b.WriteString("\nFollow this phase skill:\n\n## Skill: " + phaseSkill.Name + " (" + phaseSkill.Key + ")\n" + phaseSkill.Instructions + "\n")
+		}
+		b.WriteString(`
+Produce each phase's document with write_artifact, then advance_phase (the guard refuses skipped phases, missing artifacts or failed verifications). Verify with submit_verify when required, and archive the change only when the flow completes. You cannot move the issue to in_review/done while the change is active — the gate refuses it.
+`)
+	}
 	b.WriteString(`
 You work in turns. Every reply MUST be exactly one JSON object, no other text:
 
@@ -307,6 +413,13 @@ Available tools:
 - checkout_repo: materialize the project's repositories on disk and get their paths. args: {}
 - post_comment: post a comment on the issue as yourself. args: {"content":"...", "parent_comment_id":"(optional)"}
 - set_status: change the issue status (todo, in_progress, in_review, done, blocked, cancelled). args: {"status":"..."}
+
+Workflow tools (when the issue runs the classic flow):
+- get_flow: current change, phase and next skill. args: {}
+- write_artifact: store a versioned phase artifact (proposal, specs, design, tasks). args: {"kind":"...","content":"..."}
+- advance_phase: advance to the next phase; the guard refuses illegal advances. args: {}
+- submit_verify: submit a verify report (YAML result: pass|fail). args: {"content":"..."}
+- archive: archive the change after the flow completes. args: {}
 
 To finish:
 {"action":"final","message":"<your final answer, posted as a comment>"}

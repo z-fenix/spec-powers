@@ -161,6 +161,35 @@ func newExecutorForTest(t *testing.T, client llm.Client, issue *domain.Issue) (*
 	return e, issues, comments, checkout, logs
 }
 
+func TestExecutorCommentsTriggerMentions(t *testing.T) {
+	issue := &domain.Issue{ID: "i1", ProjectID: "p1", Title: "T"}
+	client := &fakeLLM{responses: []string{
+		`{"action":"tool","tool":"post_comment","args":{"content":"handing to @Reviewer"}}`,
+		`{"action":"final","message":"done, thanks @Reviewer"}`,
+	}}
+	e, _, comments, _, _ := newExecutorForTest(t, client, issue)
+	var mentioned []string
+	e.mentionHook = func(ctx context.Context, issueID, authorID, content string) error {
+		mentioned = append(mentioned, issueID+"|"+authorID+"|"+content)
+		return nil
+	}
+	agent := &domain.Agent{ID: "agent-1", Name: "A"}
+	run := &domain.Run{ID: "run-1", AgentID: "agent-1", IssueID: "i1"}
+	if err := e.Execute(context.Background(), run, agent); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if len(mentioned) != 2 {
+		t.Fatalf("mention hook calls = %d, want 2", len(mentioned))
+	}
+	if mentioned[0] != "i1|agent-1|handing to @Reviewer" {
+		t.Fatalf("first hook = %q", mentioned[0])
+	}
+	if mentioned[1] != "i1|agent-1|done, thanks @Reviewer" {
+		t.Fatalf("second hook = %q", mentioned[1])
+	}
+	_ = comments
+}
+
 // ---- tests ----
 
 func TestExecutorLogsEveryTurn(t *testing.T) {

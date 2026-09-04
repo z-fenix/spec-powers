@@ -13,6 +13,13 @@ func (s *Service) WithSkills(reg *skill.Registry) *Service {
 	return s
 }
 
+// WithAgentAccess installs the agent identity lookup: agent users then act
+// on changes without project membership (their runs are system-driven).
+func (s *Service) WithAgentAccess(lookup agentAccessLookup) *Service {
+	s.agentAccess = lookup
+	return s
+}
+
 // NextSkill resolves the skill the agent should load next for the change,
 // derived from the change's phase and status. A change that is not active
 // (archived, failed) has no next skill.

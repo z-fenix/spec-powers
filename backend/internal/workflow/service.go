@@ -44,6 +44,15 @@ type Service struct {
 	wakeups   wakeupRecorder
 	creator   issueCreator
 	skills    *skill.Registry
+	// agentAccess identifies agent identities; agents act on changes of
+	// their assigned issues without project membership (system-driven
+	// runs). Nil keeps the strict membership rule.
+	agentAccess agentAccessLookup
+}
+
+// agentAccessLookup reports whether a user ID is an agent identity.
+type agentAccessLookup interface {
+	IsAgent(ctx context.Context, userID string) bool
 }
 
 func NewService(changes store.ChangeStore, artifacts store.ArtifactStore, mappings store.TaskMappingStore, issues issueLookup, projects projectAccess) *Service {
@@ -116,6 +125,9 @@ func (s *Service) requireChangeRole(ctx context.Context, userID, changeID string
 }
 
 func (s *Service) requireProjectRole(ctx context.Context, userID, projectID string) error {
+	if s.agentAccess != nil && s.agentAccess.IsAgent(ctx, userID) {
+		return nil
+	}
 	if _, err := s.projects.GetProject(ctx, projectID); err != nil {
 		if err == store.ErrNotFound {
 			return httpapi.ErrNotFound("project not found")

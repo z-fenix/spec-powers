@@ -7,6 +7,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"specpowers/backend/internal/auth"
 	"specpowers/backend/internal/collab"
 	"specpowers/backend/internal/config"
+	"specpowers/backend/internal/domain"
 	"specpowers/backend/internal/httpapi"
 	"specpowers/backend/internal/issue"
 	"specpowers/backend/internal/llm"
@@ -102,12 +104,17 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	notificationSvc := notification.NewService(notificationStore)
 	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
 	issueService := issue.NewService(issues, projects, users)
+	// Mention auto-claim: comments mentioning an agent enqueue its run.
+	mentionTrigger := agent.NewMentionTrigger(agents, runs)
+	collabSvc := collab.NewService(issues, projects, comments, attachments, metadata, cfg.AttachmentDir).
+		WithNotifier(notificationSvc).
+		WithCommentObserver(func(ctx context.Context, c *domain.IssueComment) {
+			if err := mentionTrigger.OnComment(ctx, c.IssueID, c.AuthorID, c.Content); err != nil {
+				log.Printf("agent mention trigger: %v", err)
+			}
+		})
 	issueHandler := issue.NewHandler(issueService, tokens).WithCollab(
-		collab.NewHandler(
-			collab.NewService(issues, projects, comments, attachments, metadata, cfg.AttachmentDir).
-				WithNotifier(notificationSvc),
-			tokens,
-		).Routes(),
+		collab.NewHandler(collabSvc, tokens).Routes(),
 	)
 	projectHandler := project.NewHandler(
 		project.NewService(projects, users, members, workspaces),
@@ -125,6 +132,9 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 		return nil, fmt.Errorf("skill registry: %w", err)
 	}
 	workflowService = workflowService.WithSkills(skillRegistry)
+	// Agent identities act on changes of their assigned issues without
+	// project membership (their runs are system-driven).
+	workflowService = workflowService.WithAgentAccess(agent.StoreAgentAccess{Agents: agents})
 
 	llmClient := opt.LLM
 	if llmClient == nil && cfg.LLMAPIKey != "" && cfg.LLMModel != "" {
@@ -159,14 +169,16 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	// issue-service trigger that enqueues runs on assignment / status change.
 	agentSvc := agent.NewService(agents, users, skillRegistry)
 	executor := agent.NewExecutor(agent.ExecutorDeps{
-		Issues:   issues,
-		Comments: comments,
-		Metadata: metadata,
-		Projects: projects,
-		Client:   llmClient,
-		Skills:   skillRegistry,
-		WorkDir:  cfg.AgentWorkDir,
-		Logs:     runLogs,
+		Issues:      issues,
+		Comments:    comments,
+		Metadata:    metadata,
+		Projects:    projects,
+		Client:      llmClient,
+		Skills:      skillRegistry,
+		WorkDir:     cfg.AgentWorkDir,
+		Logs:        runLogs,
+		Flow:        agent.NewWorkflowFlow(workflowService),
+		MentionHook: mentionTrigger.OnComment,
 	})
 	queue := agent.NewQueue(runs, runLogs, agents, executor).WithNotifier(notificationSvc, issues)
 	issueService = issueService.WithRunTrigger(agent.NewTrigger(agents, runs))

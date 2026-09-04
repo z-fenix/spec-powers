@@ -43,6 +43,10 @@ type Service struct {
 	attachments store.AttachmentStore
 	metadata    store.IssueMetadataStore
 	notifier    notification.Sink
+	// commentObserver is called after every created comment (roots and
+	// replies); used by the agent runtime to claim @-mentions. Observer
+	// errors are non-fatal — the comment is already stored.
+	commentObserver func(ctx context.Context, c *domain.IssueComment)
 
 	// AttachmentDir is the local directory files are stored under;
 	// StoragePath values are relative to it.
@@ -67,6 +71,14 @@ func NewService(issues issueLookup, projects projectAccess, comments store.Comme
 // the issue's assignee (unless the author is the assignee themself).
 func (s *Service) WithNotifier(n notification.Sink) *Service {
 	s.notifier = n
+	return s
+}
+
+// WithCommentObserver installs a callback invoked after every created
+// comment. Used by the agent runtime to auto-claim @-mentions; failures are
+// non-fatal because the comment is already persisted.
+func (s *Service) WithCommentObserver(obs func(ctx context.Context, c *domain.IssueComment)) *Service {
+	s.commentObserver = obs
 	return s
 }
 
@@ -137,6 +149,9 @@ func (s *Service) AddComment(ctx context.Context, userID, issueID, parentComment
 		return nil, httpapi.ErrInternal("create comment failed")
 	}
 	s.notifyComment(ctx, i, userID, c.Content)
+	if s.commentObserver != nil {
+		s.commentObserver(ctx, c)
+	}
 	return c, nil
 }
 

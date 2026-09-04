@@ -70,6 +70,21 @@ cd frontend && npm test -- --run && npm run build
 | DELETE | `/projects/{id}/resources/{rid}` | 移除资源绑定（仅 owner） |
 | GET | `/projects/{id}/context` | 读取项目上下文（成员） |
 | PUT | `/projects/{id}/context` | 写入项目上下文（仅 owner） |
+| POST | `/projects/{id}/issues` | 创建 issue（成员；支持 parent_id / stage，见下） |
+| GET | `/projects/{id}/issues` | issue 列表（成员；查询参数 status / stage / parent=root） |
+| GET | `/projects/{id}/issues/{iid}` | issue 详情 |
+| PATCH | `/projects/{id}/issues/{iid}` | 更新标题/描述/优先级/指派人/截止日期/标签/stage/position/parent |
+| DELETE | `/projects/{id}/issues/{iid}` | 删除 issue（级联删除子 issue） |
+| POST | `/projects/{id}/issues/{iid}/status` | 看板状态流转（body: `{status}`，校验状态机） |
+| GET | `/projects/{id}/issues/{iid}/children` | 子 issue 列表（按 stage、position 排序） |
+
+### Issue 状态机
+
+状态：`backlog / todo / in_progress / in_review / done / blocked / cancelled`，其中 `done` 与 `cancelled` 为终态。
+
+合法流转：backlog→todo；todo→in_progress/blocked；in_progress→in_review/blocked/todo；in_review→done/in_progress；blocked→in_progress/todo；任意非终态→cancelled。其余流转（含终态出入）返回 400。
+
+子 issue 全部到达终态时，父 issue 记录一条唤醒（`issue_wakeups`，按父子对幂等），供后续 agent 运行时消费。
 
 错误统一信封：`{"error":{"code":"...","message":"..."}}`。
 

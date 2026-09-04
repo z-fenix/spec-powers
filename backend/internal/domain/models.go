@@ -61,3 +61,32 @@ type ProjectContext struct {
 	Content   string
 	UpdatedAt time.Time
 }
+
+// Issue is a unit of work inside a project. ParentID empty means a root
+// issue; AssigneeID empty means unassigned; DueDate nil means no deadline.
+type Issue struct {
+	ID          string
+	ProjectID   string
+	ParentID    string
+	Title       string
+	Description string
+	Status      string
+	Priority    string
+	AssigneeID  string
+	DueDate     *time.Time
+	Labels      []string
+	Stage       int
+	Position    int
+	CreatedBy   string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// IssueWakeup records that a parent issue's owner should be woken because
+// every child issue reached a terminal state. Consumed by the agent runtime.
+type IssueWakeup struct {
+	ID           string
+	IssueID      string
+	ChildIssueID string
+	CreatedAt    time.Time
+}

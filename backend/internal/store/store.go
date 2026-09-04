@@ -48,3 +48,27 @@ type ProjectStore interface {
 	GetProjectContext(ctx context.Context, projectID string) (*domain.ProjectContext, error)
 	SetProjectContext(ctx context.Context, projectID, content string) (*domain.ProjectContext, error)
 }
+
+// IssueFilter narrows ListIssues. ParentID nil means "no filter"; a pointer
+// to "" selects root issues only. Empty Status means all statuses; nil Stage
+// means all stages.
+type IssueFilter struct {
+	ParentID *string
+	Status   string
+	Stage    *int
+}
+
+type IssueStore interface {
+	CreateIssue(ctx context.Context, i *domain.Issue) (*domain.Issue, error)
+	GetIssue(ctx context.Context, id string) (*domain.Issue, error)
+	UpdateIssue(ctx context.Context, i *domain.Issue) (*domain.Issue, error)
+	DeleteIssue(ctx context.Context, id string) error
+	ListIssues(ctx context.Context, projectID string, filter IssueFilter) ([]domain.Issue, error)
+	// NextIssuePosition returns the next position value for a sibling group
+	// scoped by project, parent ("" for roots) and stage.
+	NextIssuePosition(ctx context.Context, projectID, parentID string, stage int) (int, error)
+	// CreateIssueWakeup records a parent wakeup for the child reaching
+	// terminal state; repeats for the same pair are idempotent.
+	CreateIssueWakeup(ctx context.Context, issueID, childIssueID string) error
+	ListIssueWakeups(ctx context.Context, issueID string) ([]domain.IssueWakeup, error)
+}

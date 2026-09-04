@@ -19,7 +19,7 @@ func setupHandler(t *testing.T) (http.Handler, *TokenIssuer, *fakeUsers) {
 	users := newFakeUsers()
 	svc := NewService(projects, users, newFakeMembers(), &fakeWorkspaces{})
 	tokens := auth.NewTokenService("test-secret", 15*time.Minute)
-	h := NewHandler(svc, tokens)
+	h := NewHandler(svc, tokens, nil)
 	return h.Routes(), &TokenIssuer{tokens: tokens}, users
 }
 

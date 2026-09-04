@@ -14,10 +14,13 @@ import (
 type Handler struct {
 	svc    *Service
 	tokens *auth.TokenService
+	// issues is the issue-domain subrouter mounted under
+	// /{projectID}/issues; nil in tests that don't exercise issues.
+	issues http.Handler
 }
 
-func NewHandler(svc *Service, tokens *auth.TokenService) *Handler {
-	return &Handler{svc: svc, tokens: tokens}
+func NewHandler(svc *Service, tokens *auth.TokenService, issues http.Handler) *Handler {
+	return &Handler{svc: svc, tokens: tokens, issues: issues}
 }
 
 type projectDTO struct {
@@ -79,6 +82,9 @@ func (h *Handler) Routes() http.Handler {
 			r.Get("/", h.get)
 			r.Get("/resources", h.listResources)
 			r.Get("/context", h.getContext)
+			if h.issues != nil {
+				r.Mount("/issues", h.issues)
+			}
 			r.Group(func(r chi.Router) {
 				r.Use(h.requireRole("owner"))
 				r.Patch("/", h.update)

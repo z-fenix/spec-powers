@@ -13,6 +13,7 @@ import (
 	"specpowers/backend/internal/auth"
 	"specpowers/backend/internal/config"
 	"specpowers/backend/internal/httpapi"
+	"specpowers/backend/internal/issue"
 	"specpowers/backend/internal/project"
 	"specpowers/backend/internal/store/postgres"
 )
@@ -39,12 +40,15 @@ func main() {
 	workspaces := postgres.NewWorkspaceStore(pool)
 	members := postgres.NewMemberStore(pool)
 	projects := postgres.NewProjectStore(pool)
+	issues := postgres.NewIssueStore(pool)
 
 	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
 	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
+	issueHandler := issue.NewHandler(issue.NewService(issues, projects, users), tokens)
 	projectHandler := project.NewHandler(
 		project.NewService(projects, users, members, workspaces),
 		tokens,
+		issueHandler.Routes(),
 	)
 
 	srv := &http.Server{

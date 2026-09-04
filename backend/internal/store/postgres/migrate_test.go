@@ -8,7 +8,7 @@ import (
 )
 
 type execCall struct {
-	sql  string
+	sql string
 }
 
 type fakeDB struct {

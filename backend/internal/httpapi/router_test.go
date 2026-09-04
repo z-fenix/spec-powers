@@ -130,3 +130,21 @@ func TestRecoverMiddleware(t *testing.T) {
 		t.Errorf("code = %q, want internal", body.Error.Code)
 	}
 }
+
+func TestRouterMountsSkills(t *testing.T) {
+	reached := false
+	stub := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		if r.URL.Path != "" && r.URL.Path != "/" {
+			t.Errorf("stripped path = %q, want root", r.URL.Path)
+		}
+	})
+	h := NewRouter(Deps{Skills: stub})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/skills", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if !reached {
+		t.Error("skills handler not reached under /api/v1/skills")
+	}
+}

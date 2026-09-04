@@ -5,6 +5,7 @@ import (
 
 	"specpowers/backend/internal/domain"
 	"specpowers/backend/internal/httpapi"
+	"specpowers/backend/internal/skill"
 	"specpowers/backend/internal/store"
 )
 
@@ -41,6 +42,8 @@ type Service struct {
 	projects  projectAccess
 	splitter  *Splitter
 	wakeups   wakeupRecorder
+	creator   issueCreator
+	skills    *skill.Registry
 }
 
 func NewService(changes store.ChangeStore, artifacts store.ArtifactStore, mappings store.TaskMappingStore, issues issueLookup, projects projectAccess) *Service {

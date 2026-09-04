@@ -142,6 +142,21 @@ type Handoff struct {
 	ToPhase   string `json:"to_phase"`
 }
 
+type Skill struct {
+	Key          string `json:"key"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	Order        int    `json:"order"`
+	Instructions string `json:"instructions"`
+}
+
+type Artifact struct {
+	ID       string `json:"id"`
+	ChangeID string `json:"change_id"`
+	Kind     string `json:"kind"`
+	Version  int    `json:"version"`
+}
+
 // ---- endpoint methods ----
 
 func (c *Client) Register(email, password, displayName string) (LoginResult, error) {
@@ -185,6 +200,69 @@ func (c *Client) CreateChange(issueID string) (*Change, []TaskMapping, error) {
 		return nil, nil, err
 	}
 	return &res.Change, res.Tasks, nil
+}
+
+// CreateChangeManual opens a bare proposal-phase change without the AI
+// split, for the agent-driven skill flow.
+func (c *Client) CreateChangeManual(issueID string) (*Change, error) {
+	var res struct {
+		Change Change `json:"change"`
+	}
+	err := c.do(http.MethodPost, "/changes", map[string]any{"issue_id": issueID, "manual": true}, &res)
+	if err != nil {
+		return nil, err
+	}
+	return &res.Change, nil
+}
+
+// ListSkills returns the known skills in flow order.
+func (c *Client) ListSkills() ([]Skill, error) {
+	var res struct {
+		Skills []Skill `json:"skills"`
+	}
+	err := c.do(http.MethodGet, "/skills", nil, &res)
+	if err != nil {
+		return nil, err
+	}
+	return res.Skills, nil
+}
+
+// GetSkill returns one skill including its instructions.
+func (c *Client) GetSkill(key string) (*Skill, error) {
+	var res struct {
+		Skill Skill `json:"skill"`
+	}
+	err := c.do(http.MethodGet, "/skills/"+key, nil, &res)
+	if err != nil {
+		return nil, err
+	}
+	return &res.Skill, nil
+}
+
+// NextSkill resolves the skill the agent should load next for the change.
+func (c *Client) NextSkill(changeID string) (*Skill, error) {
+	var res struct {
+		Skill Skill `json:"skill"`
+	}
+	err := c.do(http.MethodGet, "/changes/"+changeID+"/skills/next", nil, &res)
+	if err != nil {
+		return nil, err
+	}
+	return &res.Skill, nil
+}
+
+// WriteArtifact stores a new version of one artifact kind for the change.
+func (c *Client) WriteArtifact(changeID, kind, content string) (*Artifact, error) {
+	var res struct {
+		Artifact Artifact `json:"artifact"`
+	}
+	err := c.do(http.MethodPost, "/changes/"+changeID+"/artifacts/"+kind, map[string]string{
+		"content": content,
+	}, &res)
+	if err != nil {
+		return nil, err
+	}
+	return &res.Artifact, nil
 }
 
 func (c *Client) GetChange(changeID string) (*Change, error) {

@@ -17,10 +17,17 @@ type fakeChanges struct {
 	byIssue    map[string]*domain.Change
 	handoffs   map[string][]domain.ChangeHandoff // changeID -> newest first
 	handoffSeq int
+	seq        int
 }
 
 func (f *fakeChanges) CreateChange(_ context.Context, c *domain.Change) (*domain.Change, error) {
-	panic("not used in service tests")
+	f.seq++
+	stored := *c
+	stored.ID = fmt.Sprintf("c-new-%d", f.seq)
+	f.byID[stored.ID] = &stored
+	f.byIssue[stored.IssueID] = &stored
+	out := stored
+	return &out, nil
 }
 
 func (f *fakeChanges) UpdateChange(_ context.Context, c *domain.Change) (*domain.Change, error) {
@@ -133,7 +140,8 @@ type fakeMappings struct {
 }
 
 func (f *fakeMappings) SetTaskMappings(_ context.Context, changeID, artifactID string, items []domain.TaskMapping) error {
-	panic("not used in service tests")
+	f.byChange[changeID] = items
+	return nil
 }
 
 func (f *fakeMappings) ListTaskMappings(_ context.Context, changeID string) ([]domain.TaskMapping, error) {

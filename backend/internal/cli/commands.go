@@ -18,7 +18,11 @@ const usage = `sp - spec-powers command line client
 Usage:
 
   sp login  --server URL --email EMAIL --password PW [--register]
-  sp open   --issue ID
+  sp open   --issue ID [--manual]
+  sp skills
+  sp skill  <KEY>
+  sp next-skill [--change ID]
+  sp artifact write <KIND> [--file PATH | --content TEXT] [--change ID]
   sp guard  [--change ID]
   sp handoff [--change ID]
   sp state record-check <build|verify> --command CMD --exit-code N [--cwd DIR] [--change ID]
@@ -41,6 +45,18 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return cmdLogin(args[1:], stdout, stderr)
 	case "open":
 		return cmdOpen(args[1:], stdout, stderr)
+	case "skills":
+		return cmdSkills(args[1:], stdout, stderr)
+	case "skill":
+		return cmdSkill(args[1:], stdout, stderr)
+	case "next-skill":
+		return cmdNextSkill(args[1:], stdout, stderr)
+	case "artifact":
+		if len(args) >= 3 && args[1] == "write" {
+			return cmdArtifactWrite(args[2:], stdout, stderr)
+		}
+		fmt.Fprintln(stderr, usage)
+		return 2
 	case "guard":
 		return cmdGuard(args[1:], stdout, stderr)
 	case "handoff":
@@ -203,6 +219,7 @@ func cmdOpen(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("open", flag.ContinueOnError)
 	e.resolveFlags(fs)
 	issueID := fs.String("issue", "", "issue to open a change for")
+	manual := fs.Bool("manual", false, "start a bare change without the AI split (skill flow)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -215,7 +232,7 @@ func cmdOpen(args []string, stdout, stderr io.Writer) int {
 		return e.fail(1, err)
 	}
 
-	change, tasks, err := e.openChange(c, *issueID)
+	change, tasks, err := e.openChange(c, *issueID, *manual)
 	if err != nil {
 		return e.fail(1, err)
 	}
@@ -243,9 +260,9 @@ func cmdOpen(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// openChange binds an existing change for the issue or creates one (the
-// server runs the AI classic split).
-func (e *env) openChange(c *Client, issueID string) (*Change, []TaskMapping, error) {
+// openChange binds an existing change for the issue or creates one; with
+// manual=true a bare change is created (no AI split).
+func (e *env) openChange(c *Client, issueID string, manual bool) (*Change, []TaskMapping, error) {
 	change, err := c.GetChangeByIssue(issueID)
 	if err == nil {
 		tasks, err := c.ListTasks(change.ID)
@@ -256,6 +273,13 @@ func (e *env) openChange(c *Client, issueID string) (*Change, []TaskMapping, err
 	}
 	if !NotFound(err) {
 		return nil, nil, err
+	}
+	if manual {
+		change, err := c.CreateChangeManual(issueID)
+		if err != nil {
+			return nil, nil, err
+		}
+		return change, nil, nil
 	}
 	return c.CreateChange(issueID)
 }
@@ -546,4 +570,155 @@ func (e *env) updateBoundChange(change *Change) error {
 	st.Status = change.Status
 	st.UpdatedAt = nowRFC3339()
 	return SaveState(st)
+}
+
+// ---- skill commands ----
+
+func cmdSkills(args []string, stdout, stderr io.Writer) int {
+	e := &env{stdout: stdout, stderr: stderr}
+	fs := flag.NewFlagSet("skills", flag.ContinueOnError)
+	e.resolveFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	c, err := e.connection()
+	if err != nil {
+		return e.fail(1, err)
+	}
+	skills, err := c.ListSkills()
+	if err != nil {
+		return e.fail(1, err)
+	}
+	if e.json {
+		printJSON(stdout, skills)
+		return 0
+	}
+	for _, s := range skills {
+		fmt.Fprintf(stdout, "%d. %s (%s)\n    %s\n", s.Order, s.Name, s.Key, s.Description)
+	}
+	return 0
+}
+
+func cmdSkill(args []string, stdout, stderr io.Writer) int {
+	e := &env{stdout: stdout, stderr: stderr}
+	fs := flag.NewFlagSet("skill", flag.ContinueOnError)
+	e.resolveFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "usage: sp skill <KEY>")
+		return 2
+	}
+	c, err := e.connection()
+	if err != nil {
+		return e.fail(1, err)
+	}
+	s, err := c.GetSkill(fs.Arg(0))
+	if err != nil {
+		return e.fail(1, err)
+	}
+	if e.json {
+		printJSON(stdout, s)
+		return 0
+	}
+	fmt.Fprintf(stdout, "# %s (%s)\n\n%s\n", s.Name, s.Key, s.Instructions)
+	return 0
+}
+
+func cmdNextSkill(args []string, stdout, stderr io.Writer) int {
+	e := &env{stdout: stdout, stderr: stderr}
+	fs := flag.NewFlagSet("next-skill", flag.ContinueOnError)
+	e.resolveFlags(fs)
+	changeFlag := fs.String("change", "", "change id (default bound change)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	c, err := e.connection()
+	if err != nil {
+		return e.fail(1, err)
+	}
+	changeID, err := e.requireChange(*changeFlag)
+	if err != nil {
+		return e.fail(1, err)
+	}
+	s, err := c.NextSkill(changeID)
+	if err != nil {
+		return e.fail(1, err)
+	}
+	if e.json {
+		printJSON(stdout, s)
+		return 0
+	}
+	fmt.Fprintf(stdout, "# %s (%s)\n\n%s\n", s.Name, s.Key, s.Instructions)
+	return 0
+}
+
+func cmdArtifactWrite(args []string, stdout, stderr io.Writer) int {
+	e := &env{stdout: stdout, stderr: stderr}
+	fs := flag.NewFlagSet("artifact write", flag.ContinueOnError)
+	e.resolveFlags(fs)
+	changeFlag := fs.String("change", "", "change id (default bound change)")
+	file := fs.String("file", "", "path to the artifact content")
+	content := fs.String("content", "", "inline artifact content")
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "usage: sp artifact write <KIND> [--file PATH | --content TEXT] [--change ID]")
+		return 2
+	}
+	// the kind is positional and must precede the flags: the flag package
+	// stops parsing at the first non-flag argument
+	kind := args[0]
+	if err := fs.Parse(args[1:]); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "usage: sp artifact write <KIND> [--file PATH | --content TEXT] [--change ID]")
+		return 2
+	}
+	body, err := readArtifactContent(*file, *content)
+	if err != nil {
+		return e.fail(2, err)
+	}
+	c, err := e.connection()
+	if err != nil {
+		return e.fail(1, err)
+	}
+	changeID, err := e.requireChange(*changeFlag)
+	if err != nil {
+		return e.fail(1, err)
+	}
+	a, err := c.WriteArtifact(changeID, kind, body)
+	if err != nil {
+		return e.fail(1, err)
+	}
+	if e.json {
+		printJSON(stdout, a)
+		return 0
+	}
+	fmt.Fprintf(stdout, "wrote %s v%d to change %s\n", a.Kind, a.Version, a.ChangeID)
+	return 0
+}
+
+// readArtifactContent resolves the artifact content from --file, --content
+// or stdin, in that order.
+func readArtifactContent(file, content string) (string, error) {
+	switch {
+	case file != "":
+		b, err := os.ReadFile(file)
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	case content != "":
+		return content, nil
+	default:
+		b, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", err
+		}
+		if len(b) == 0 {
+			return "", fmt.Errorf("no content given: use --file, --content or pipe text to stdin")
+		}
+		return string(b), nil
+	}
 }

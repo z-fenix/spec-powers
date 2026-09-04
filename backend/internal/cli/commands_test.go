@@ -20,6 +20,7 @@ type stubServer struct {
 	created    map[string]bool // issues that already have a change
 
 	createCalls  int
+	createManual bool
 	guardPost    int
 	verifyBodies []string
 	archiveCalls int
@@ -81,11 +82,13 @@ func newStubServer(t *testing.T) *stubServer {
 			writeJSON(w, http.StatusOK, map[string]any{"change": s.changeDTO("c1", issueID)})
 		case http.MethodPost:
 			s.createCalls++
-			var req map[string]string
+			var req map[string]any
 			json.NewDecoder(r.Body).Decode(&req)
-			s.created[req["issue_id"]] = true
+			issueID, _ := req["issue_id"].(string)
+			s.created[issueID] = true
+			s.createManual = req["manual"] == true
 			writeJSON(w, http.StatusCreated, map[string]any{
-				"change": s.changeDTO("c1", req["issue_id"]),
+				"change": s.changeDTO("c1", issueID),
 				"tasks":  []any{s.taskDTO("m1", "i2", "Stage one task", 1, 0)},
 			})
 		default:
@@ -146,6 +149,44 @@ func newStubServer(t *testing.T) *stubServer {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"change": s.changeDTOWithPhase("c1", "i1", "archived"),
 		})
+	})
+	handle("/api/v1/changes/c1/artifacts/proposal", func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]string
+		json.NewDecoder(r.Body).Decode(&req)
+		if req["content"] == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": map[string]string{"code": "invalid_request", "message": "content is required"},
+			})
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"artifact": map[string]any{"id": "a1", "change_id": "c1", "kind": "proposal", "version": 1},
+		})
+	})
+	handle("/api/v1/changes/c1/skills/next", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"skill": map[string]any{
+			"key": "brainstorm", "name": "需求探索（Brainstorm）", "description": "d", "order": 1,
+			"instructions": "# 需求探索\n\n第一步。",
+		}})
+	})
+	handle("/api/v1/skills", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"skills": []any{
+			map[string]any{"key": "brainstorm", "name": "需求探索（Brainstorm）", "description": "探索需求并产出 proposal", "order": 1, "instructions": "body"},
+			map[string]any{"key": "write-plan", "name": "写实施计划（Write Plan）", "description": "产出 specs/design/tasks", "order": 2, "instructions": "body"},
+			map[string]any{"key": "subagent-driven-development", "name": "子代理驱动开发", "description": "按 stage 派发执行", "order": 3, "instructions": "body"},
+		}})
+	})
+	handle("/api/v1/skills/", func(w http.ResponseWriter, r *http.Request) {
+		key := strings.TrimPrefix(r.URL.Path, "/api/v1/skills/")
+		if key != "brainstorm" && key != "write-plan" && key != "subagent-driven-development" {
+			writeJSON(w, http.StatusNotFound, map[string]any{
+				"error": map[string]string{"code": "not_found", "message": "skill not found"},
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"skill": map[string]any{
+			"key": key, "name": "n", "description": "d", "order": 1, "instructions": "# 步骤\n\n1. 做事",
+		}})
 	})
 
 	s.srv = httptest.NewServer(mux)

@@ -28,6 +28,7 @@ type Deps struct {
 	Auth    http.Handler
 	Project http.Handler
 	Changes http.Handler
+	Skills  http.Handler
 }
 
 func NewRouter(deps Deps) http.Handler {
@@ -47,6 +48,9 @@ func NewRouter(deps Deps) http.Handler {
 		}
 		if deps.Changes != nil {
 			r.Mount("/changes", http.StripPrefix("/api/v1/changes", deps.Changes))
+		}
+		if deps.Skills != nil {
+			r.Mount("/skills", http.StripPrefix("/api/v1/skills", deps.Skills))
 		}
 		r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 			Error(w, ErrNotFound("route not found"))

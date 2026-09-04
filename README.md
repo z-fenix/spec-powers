@@ -54,6 +54,22 @@ sp login --server http://localhost:8080 --email me@example.com --password *** [-
 # 打开 change：issue 已拆分则绑定，否则触发 AI classic 拆分
 sp open --issue <issue-id>
 
+# 手动打开 change：不跑 AI 拆分，由 agent 技能流程自己产出各阶段产物
+sp open --issue <issue-id> --manual
+
+# 列出技能包（superpowers 流程：brainstorm → write-plan → subagent-driven-development）
+sp skills
+
+# 加载技能指令（agent 按指令驱动流程）
+sp skill <key>
+
+# 解析当前 change 应执行的下一个技能（proposal→brainstorm；specs/design→write-plan；tasks→subagent-driven-development）
+sp next-skill [--change <change-id>]
+
+# 手动写入产物（tasks 会解析 JSON 围栏块并自动创建带 stage 的子 issue 与任务映射）
+sp artifact write <proposal|specs|design|tasks> --file plan.md
+sp artifact write tasks --content "$(cat tasks.md)"
+
 # 门禁：打印报告；无可推进且无可归档时以非零码退出
 sp guard [--change <change-id>]
 
@@ -128,14 +144,19 @@ cd frontend && npm test -- --run && npm run build
 | PUT | `/projects/{id}/issues/{iid}/metadata/{key}` | 设置元数据（upsert，body: `{value, type?}`；type: string/number/bool，缺省 string） |
 | DELETE | `/projects/{id}/issues/{iid}/metadata/{key}` | 删除元数据 |
 | GET | `/changes?issue_id={iid}` | issue 的工作流实例（classic 拆分，一 issue 一 change） |
+| POST | `/changes` | 打开 change（body: `{issue_id, manual?}`；缺省跑 AI classic 拆分，`manual:true` 仅创建 proposal 阶段的空 change，由技能流程手动补产物） |
 | GET | `/changes/{cid}` | change 详情（project_id / issue_id / phase / status） |
 | GET | `/changes/{cid}/artifacts` | 产物列表（每类 kind 的最新版本，按 proposal→specs→design→tasks 排序） |
 | GET | `/changes/{cid}/artifacts/{kind}` | 读取产物 markdown（kind: proposal/specs/design/tasks/verify；`?version=N` 指定版本，缺省最新） |
+| POST | `/changes/{cid}/artifacts/{kind}` | 手动写入产物新版本（body: `{content}`；kind: proposal/specs/design/tasks；tasks 需含 ```json 围栏块并自动创建子 issue 与任务映射） |
 | GET | `/changes/{cid}/tasks` | tasks 条目与子 issue 的映射（按 stage、position 排序） |
 | GET | `/changes/{cid}/guard` | 门禁评估报告（phase 合法性 / handoff 新鲜度 / verify 通过 / 可推进 / 可归档，附未通过原因） |
 | POST | `/changes/{cid}/guard` | 门禁推进：校验通过后进入下一 phase 并写入 handoff 记录 |
 | POST | `/changes/{cid}/verify` | 提交 verify 报告（body: `{content}`，YAML；`result` 必须为 pass/fail，最新报告为 pass 才放行归档） |
 | POST | `/changes/{cid}/archive` | 归档 change（要求 active、tasks 阶段、产物链自洽、handoff 新鲜、verify pass；归档后按父子对唤醒父 issue 负责人验收） |
+| GET | `/skills` | 技能包列表（内嵌 superpowers 流程技能，按 flow 顺序） |
+| GET | `/skills/{key}` | 读取单个技能的完整指令（brainstorm / write-plan / subagent-driven-development） |
+| GET | `/changes/{cid}/skills/next` | 按 change 的 phase/status 解析下一个应加载的技能 |
 
 ### Issue 状态机
 
@@ -153,6 +174,16 @@ change 的 phase 顺序为 proposal→specs→design→tasks，AI 拆分器每�
 - **handoff 新鲜度**：进入当前 phase 必须有对应的 handoff 记录，且此前各 phase 的产物未在 handoff 之后重新生成（过期即拦截）；
 - **verify 报告**：`POST /changes/{cid}/verify` 提交 YAML 报告，`result` 必须为 `pass` 或 `fail`；最新一份报告为 pass 才放行归档；
 - **归档**：全部门禁通过后 `POST /changes/{cid}/archive` 置 change 为 archived，并联动父 issue 收尾——若 change 所属 issue 存在父 issue，按 Multica 一致的规则记录父唤醒，由父 issue 负责人确认验收。
+
+### Agent 技能包（superpowers 流程）
+
+技能 = 可被 agent 运行时加载的指令包，内嵌于服务端二进制（`internal/skill/skills/*.md`，frontmatter + markdown 正文），通过 `/api/v1/skills` 读取，不引入外部 superpowers 代码。核心流程三个技能：
+
+1. **brainstorm（需求探索）**：澄清目标、盘点约束、比较方案，产出 proposal 产物并 handoff；
+2. **write-plan（写实施计划）**：依次产出 specs / design / tasks 三份产物（tasks 自动拆出带 stage 的子 issue）；
+3. **subagent-driven-development（子代理驱动开发）**：按 stage 顺序派发子任务给子代理执行、逐项验收，最后 verify + archive。
+
+`GET /changes/{cid}/skills/next` 按 change 状态推导下一个技能（proposal→brainstorm；specs/design→write-plan；tasks→subagent-driven-development；非 active 无下一步）。不配置 LLM 时可用 `sp open --manual` + `sp artifact write` 驱动完整流程。
 
 错误统一信封：`{"error":{"code":"...","message":"..."}}`。
 

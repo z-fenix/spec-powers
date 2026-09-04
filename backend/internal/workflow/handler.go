@@ -104,8 +104,10 @@ func (h *Handler) Routes() http.Handler {
 		r.Get("/", h.get)
 		r.Get("/artifacts", h.listArtifacts)
 		r.Get("/artifacts/{kind}", h.getArtifact)
+		r.Post("/artifacts/{kind}", h.writeArtifact)
 		r.Get("/tasks", h.listTasks)
 		r.Get("/guard", h.guardStatus)
+		r.Get("/skills/next", h.nextSkill)
 		r.Post("/guard", h.advancePhase)
 		r.Post("/verify", h.submitVerify)
 		r.Post("/archive", h.archive)
@@ -123,10 +125,14 @@ func writeAppError(w http.ResponseWriter, err error) {
 
 type startSplitRequest struct {
 	IssueID string `json:"issue_id"`
+	// Manual starts a bare proposal-phase change without the AI splitter,
+	// for the agent-driven skill flow.
+	Manual bool `json:"manual"`
 }
 
-// startSplit runs the AI classic split for an issue ("publishing" it) and
-// returns the change plus the generated task mappings.
+// startSplit opens a change for an issue: by default it runs the AI classic
+// split and returns the change plus the generated task mappings; with
+// manual=true it creates a bare change for the skill flow to fill in.
 func (h *Handler) startSplit(w http.ResponseWriter, r *http.Request) {
 	var req startSplitRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -137,7 +143,7 @@ func (h *Handler) startSplit(w http.ResponseWriter, r *http.Request) {
 		httpapi.Error(w, httpapi.ErrInvalid("issue_id is required"))
 		return
 	}
-	change, tasks, err := h.svc.StartSplit(r.Context(), auth.UserIDFrom(r.Context()), req.IssueID)
+	change, tasks, err := h.svc.StartChange(r.Context(), auth.UserIDFrom(r.Context()), req.IssueID, req.Manual)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -204,6 +210,26 @@ func (h *Handler) getArtifact(w http.ResponseWriter, r *http.Request) {
 	httpapi.JSON(w, http.StatusOK, map[string]any{"artifact": toArtifactDTO(a)})
 }
 
+type writeArtifactRequest struct {
+	Content string `json:"content"`
+}
+
+// writeArtifact stores a new version of one artifact kind; the manual path
+// used by the agent-driven skill flow.
+func (h *Handler) writeArtifact(w http.ResponseWriter, r *http.Request) {
+	var req writeArtifactRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpapi.Error(w, httpapi.ErrInvalid("body must be JSON with content"))
+		return
+	}
+	a, err := h.svc.WriteArtifact(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "changeID"), chi.URLParam(r, "kind"), req.Content)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	httpapi.JSON(w, http.StatusCreated, map[string]any{"artifact": toArtifactDTO(a)})
+}
+
 func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 	list, err := h.svc.ListTaskMappings(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "changeID"))
 	if err != nil {
@@ -225,6 +251,16 @@ func (h *Handler) guardStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpapi.JSON(w, http.StatusOK, map[string]any{"guard": report})
+}
+
+// nextSkill resolves the skill the agent should load next for the change.
+func (h *Handler) nextSkill(w http.ResponseWriter, r *http.Request) {
+	s, err := h.svc.NextSkill(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "changeID"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	httpapi.JSON(w, http.StatusOK, map[string]any{"skill": s})
 }
 
 // advancePhase runs the guard-checked transition to the next classic phase.

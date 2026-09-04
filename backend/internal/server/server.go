@@ -19,6 +19,7 @@ import (
 	"specpowers/backend/internal/issue"
 	"specpowers/backend/internal/llm"
 	"specpowers/backend/internal/project"
+	"specpowers/backend/internal/skill"
 	"specpowers/backend/internal/store/postgres"
 	"specpowers/backend/internal/workflow"
 )
@@ -100,6 +101,15 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	)
 	workflowService := workflow.NewService(changes, artifacts, taskMappings, issues, projects)
 	workflowService = workflowService.WithWaker(issues)
+	workflowService = workflowService.WithCreator(issueService)
+	skillRegistry, err := skill.DefaultRegistry()
+	if err != nil {
+		if ownsPool {
+			pool.Close()
+		}
+		return nil, fmt.Errorf("skill registry: %w", err)
+	}
+	workflowService = workflowService.WithSkills(skillRegistry)
 
 	llmClient := opt.LLM
 	if llmClient == nil && cfg.LLMAPIKey != "" && cfg.LLMModel != "" {
@@ -127,12 +137,14 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 		workflowService = workflowService.WithSplitter(splitter)
 	}
 	workflowHandler := workflow.NewHandler(workflowService, tokens)
+	skillHandler := skill.NewHandler(skillRegistry, tokens)
 
 	return &Server{
 		Handler: httpapi.NewRouter(httpapi.Deps{
 			Auth:    authHandler.Routes(),
 			Project: projectHandler.Routes(),
 			Changes: workflowHandler.Routes(),
+			Skills:  skillHandler.Routes(),
 		}),
 		pool:     pool,
 		ownsPool: ownsPool,

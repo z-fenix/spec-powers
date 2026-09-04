@@ -199,13 +199,21 @@ func validateArtifact(kind, content string) error {
 // createSubIssues turns the parsed tasks list into sub-issues under the
 // parent issue and binds them to the tasks artifact via task mappings.
 func (s *Splitter) createSubIssues(ctx context.Context, userID string, parent *domain.Issue, change *domain.Change, tasksArtifact *domain.Artifact, content string) error {
+	return bindTaskSubIssuesTo(ctx, s.creator, s.mappings, userID, parent, change, tasksArtifact, content)
+}
+
+// bindTaskSubIssuesTo is the shared tasks-phase mechanics: parse the tasks
+// JSON, create one sub-issue per task under the parent, and replace the
+// change's task mappings with entries bound to the tasks artifact. It backs
+// both the AI splitter and the manual artifact write.
+func bindTaskSubIssuesTo(ctx context.Context, creator issueCreator, mappings store.TaskMappingStore, userID string, parent *domain.Issue, change *domain.Change, tasksArtifact *domain.Artifact, content string) error {
 	specs, err := ParseTasks(content)
 	if err != nil {
-		return httpapi.ErrInternal("parse tasks artifact failed")
+		return httpapi.ErrInvalid("parse tasks artifact failed: " + err.Error())
 	}
 	items := make([]domain.TaskMapping, 0, len(specs))
 	for pos, spec := range specs {
-		created, err := s.creator.CreateIssue(ctx, userID, parent.ProjectID, issue.CreateInput{
+		created, err := creator.CreateIssue(ctx, userID, parent.ProjectID, issue.CreateInput{
 			Title:       spec.Title,
 			Description: spec.Description,
 			ParentID:    parent.ID,
@@ -223,7 +231,7 @@ func (s *Splitter) createSubIssues(ctx context.Context, userID string, parent *d
 			Position:   pos,
 		})
 	}
-	if err := s.mappings.SetTaskMappings(ctx, change.ID, tasksArtifact.ID, items); err != nil {
+	if err := mappings.SetTaskMappings(ctx, change.ID, tasksArtifact.ID, items); err != nil {
 		return httpapi.ErrInternal("save task mappings failed")
 	}
 	return nil

@@ -22,20 +22,24 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.JWTSecret == "" {
 		t.Error("JWTSecret should have a dev default")
 	}
+	if cfg.AttachmentDir != "data/attachments" {
+		t.Errorf("AttachmentDir default = %q, want data/attachments", cfg.AttachmentDir)
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {
 	env := map[string]string{
-		"SP_ADDR":         ":9000",
-		"SP_ENV":          "test",
-		"SP_DATABASE_URL": "postgres://u:p@h:5432/db",
-		"SP_JWT_SECRET":   "s3cret-value",
+		"SP_ADDR":           ":9000",
+		"SP_ENV":            "test",
+		"SP_DATABASE_URL":   "postgres://u:p@h:5432/db",
+		"SP_JWT_SECRET":     "s3cret-value",
+		"SP_ATTACHMENT_DIR": "/var/sp/attachments",
 	}
 	cfg, err := Load(func(k string) string { return env[k] })
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Addr != ":9000" || cfg.Env != "test" || cfg.DatabaseURL != "postgres://u:p@h:5432/db" || cfg.JWTSecret != "s3cret-value" {
+	if cfg.Addr != ":9000" || cfg.Env != "test" || cfg.DatabaseURL != "postgres://u:p@h:5432/db" || cfg.JWTSecret != "s3cret-value" || cfg.AttachmentDir != "/var/sp/attachments" {
 		t.Errorf("overrides not applied: %+v", cfg)
 	}
 }

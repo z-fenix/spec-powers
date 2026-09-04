@@ -7,24 +7,29 @@ import (
 )
 
 type Config struct {
-	Addr        string
-	DatabaseURL string
-	JWTSecret   string
-	Env         string
+	Addr          string
+	DatabaseURL   string
+	JWTSecret     string
+	Env           string
+	AttachmentDir string
 }
 
 func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
-		Addr:        getenv("SP_ADDR"),
-		DatabaseURL: getenv("SP_DATABASE_URL"),
-		JWTSecret:   getenv("SP_JWT_SECRET"),
-		Env:         getenv("SP_ENV"),
+		Addr:          getenv("SP_ADDR"),
+		DatabaseURL:   getenv("SP_DATABASE_URL"),
+		JWTSecret:     getenv("SP_JWT_SECRET"),
+		Env:           getenv("SP_ENV"),
+		AttachmentDir: getenv("SP_ATTACHMENT_DIR"),
 	}
 	if cfg.Addr == "" {
 		cfg.Addr = ":8080"
 	}
 	if cfg.Env == "" {
 		cfg.Env = "dev"
+	}
+	if cfg.AttachmentDir == "" {
+		cfg.AttachmentDir = "data/attachments"
 	}
 	if cfg.DatabaseURL == "" {
 		cfg.DatabaseURL = "postgres://specpowers:specpowers@localhost:5432/specpowers?sslmode=disable"

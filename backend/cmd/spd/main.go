@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"specpowers/backend/internal/auth"
+	"specpowers/backend/internal/collab"
 	"specpowers/backend/internal/config"
 	"specpowers/backend/internal/httpapi"
 	"specpowers/backend/internal/issue"
@@ -41,10 +42,18 @@ func main() {
 	members := postgres.NewMemberStore(pool)
 	projects := postgres.NewProjectStore(pool)
 	issues := postgres.NewIssueStore(pool)
+	comments := postgres.NewCommentStore(pool)
+	attachments := postgres.NewAttachmentStore(pool)
+	metadata := postgres.NewIssueMetadataStore(pool)
 
 	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
 	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
-	issueHandler := issue.NewHandler(issue.NewService(issues, projects, users), tokens)
+	issueHandler := issue.NewHandler(issue.NewService(issues, projects, users), tokens).WithCollab(
+		collab.NewHandler(
+			collab.NewService(issues, projects, comments, attachments, metadata, cfg.AttachmentDir),
+			tokens,
+		).Routes(),
+	)
 	projectHandler := project.NewHandler(
 		project.NewService(projects, users, members, workspaces),
 		tokens,

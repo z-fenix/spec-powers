@@ -36,6 +36,7 @@ cd frontend && npm install && npm run dev
 | `SP_DATABASE_URL` | `postgres://specpowers:specpowers@localhost:5432/specpowers?sslmode=disable` | PostgreSQL 连接串 |
 | `SP_JWT_SECRET` | dev 默认值 | JWT 签名密钥；`SP_ENV=production` 时必填 |
 | `SP_ENV` | `dev` | 运行环境 |
+| `SP_ATTACHMENT_DIR` | `data/attachments` | issue 附件的本地存储目录 |
 
 ## 测试
 
@@ -77,6 +78,14 @@ cd frontend && npm test -- --run && npm run build
 | DELETE | `/projects/{id}/issues/{iid}` | 删除 issue（级联删除子 issue） |
 | POST | `/projects/{id}/issues/{iid}/status` | 看板状态流转（body: `{status}`，校验状态机） |
 | GET | `/projects/{id}/issues/{iid}/children` | 子 issue 列表（按 stage、position 排序） |
+| POST | `/projects/{id}/issues/{iid}/comments` | 发表评论（body: `{content, parent_id?}`；parent_id 为根评论 id 即回复，线程单层） |
+| GET | `/projects/{id}/issues/{iid}/comments` | 评论列表（按时间排序，parent_id 标记所属线程） |
+| POST | `/projects/{id}/issues/{iid}/attachments` | 上传附件（multipart `file`，可选 `comment_id` 关联评论；单文件上限 20MB） |
+| GET | `/projects/{id}/issues/{iid}/attachments` | 附件列表 |
+| GET | `/projects/{id}/issues/{iid}/attachments/{aid}` | 下载附件内容 |
+| GET | `/projects/{id}/issues/{iid}/metadata` | 元数据 KV 列表（按 key 排序） |
+| PUT | `/projects/{id}/issues/{iid}/metadata/{key}` | 设置元数据（upsert，body: `{value, type?}`；type: string/number/bool，缺省 string） |
+| DELETE | `/projects/{id}/issues/{iid}/metadata/{key}` | 删除元数据 |
 
 ### Issue 状态机
 

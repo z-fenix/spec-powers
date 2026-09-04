@@ -72,3 +72,25 @@ type IssueStore interface {
 	CreateIssueWakeup(ctx context.Context, issueID, childIssueID string) error
 	ListIssueWakeups(ctx context.Context, issueID string) ([]domain.IssueWakeup, error)
 }
+
+type CommentStore interface {
+	CreateComment(ctx context.Context, c *domain.IssueComment) (*domain.IssueComment, error)
+	GetComment(ctx context.Context, id string) (*domain.IssueComment, error)
+	// ListComments returns the issue's comments ordered by created_at.
+	ListComments(ctx context.Context, issueID string) ([]domain.IssueComment, error)
+}
+
+type AttachmentStore interface {
+	CreateAttachment(ctx context.Context, a *domain.IssueAttachment) (*domain.IssueAttachment, error)
+	GetAttachment(ctx context.Context, id string) (*domain.IssueAttachment, error)
+	// ListAttachments returns the issue's attachments ordered by created_at.
+	ListAttachments(ctx context.Context, issueID string) ([]domain.IssueAttachment, error)
+}
+
+// IssueMetadataStore is the per-issue free-form KV bag. SetIssueMetadata is
+// an upsert on (issue_id, key).
+type IssueMetadataStore interface {
+	SetIssueMetadata(ctx context.Context, m *domain.IssueMetadata) (*domain.IssueMetadata, error)
+	ListIssueMetadata(ctx context.Context, issueID string) ([]domain.IssueMetadata, error)
+	DeleteIssueMetadata(ctx context.Context, issueID, key string) error
+}

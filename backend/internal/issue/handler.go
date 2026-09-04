@@ -17,10 +17,19 @@ import (
 type Handler struct {
 	svc    *Service
 	tokens *auth.TokenService
+	// collab is the comment/attachment/metadata subrouter mounted under
+	// /{issueID}; nil in tests that don't exercise collaboration.
+	collab http.Handler
 }
 
 func NewHandler(svc *Service, tokens *auth.TokenService) *Handler {
 	return &Handler{svc: svc, tokens: tokens}
+}
+
+// WithCollab attaches the collaboration subrouter served under /{issueID}.
+func (h *Handler) WithCollab(c http.Handler) *Handler {
+	h.collab = c
+	return h
 }
 
 type issueDTO struct {
@@ -67,6 +76,9 @@ func (h *Handler) Routes() http.Handler {
 		r.Delete("/", h.remove)
 		r.Post("/status", h.transition)
 		r.Get("/children", h.children)
+		if h.collab != nil {
+			r.Mount("/", h.collab)
+		}
 	})
 	return r
 }

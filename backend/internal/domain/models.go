@@ -90,3 +90,40 @@ type IssueWakeup struct {
 	ChildIssueID string
 	CreatedAt    time.Time
 }
+
+// IssueComment is a comment on an issue. ParentID empty means a root
+// comment; a non-empty ParentID is a reply inside that comment's thread
+// (threads are single-level: a reply cannot have a reply as parent).
+type IssueComment struct {
+	ID        string
+	IssueID   string
+	ParentID  string
+	AuthorID  string
+	Content   string
+	CreatedAt time.Time
+}
+
+// IssueAttachment is a file attached to an issue and optionally to one of
+// its comments. StoragePath is relative to the configured attachment
+// directory; FileName is the user-facing name only.
+type IssueAttachment struct {
+	ID          string
+	IssueID     string
+	CommentID   string
+	FileName    string
+	SizeBytes   int64
+	ContentType string
+	StoragePath string
+	UploadedBy  string
+	CreatedAt   time.Time
+}
+
+// IssueMetadata is a free-form KV entry on an issue. Type is one of
+// "string", "number" or "bool"; Value is the string form of the value.
+type IssueMetadata struct {
+	IssueID   string
+	Key       string
+	Value     string
+	Type      string
+	UpdatedAt time.Time
+}

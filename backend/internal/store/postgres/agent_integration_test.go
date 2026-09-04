@@ -121,6 +121,92 @@ func TestAgentStoreIntegration(t *testing.T) {
 	}
 }
 
+// seedLocalAgent inserts an extra agent user + agent row with the given
+// runtime kind ("local" or "server") and returns the agent id.
+func seedLocalAgent(t *testing.T, ctx context.Context, pool *pgxpool.Pool, creatorID, name, runtime string) string {
+	t.Helper()
+	var agentID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash, display_name)
+		VALUES ($1, 'x', $2) RETURNING id`,
+		"agent-"+name+"@example.com", name).Scan(&agentID); err != nil {
+		t.Fatalf("seed %s agent user: %v", name, err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", agentID) })
+	if _, err := NewAgentStore(pool).CreateAgent(ctx, &domain.Agent{
+		ID: agentID, Name: name, CreatedBy: creatorID, Runtime: runtime,
+	}); err != nil {
+		t.Fatalf("seed %s agent: %v", name, err)
+	}
+	return agentID
+}
+
+// TestClaimNextRunForAgentIntegration covers the local-runtime claim path:
+// the agent's runtime kind round-trips, the server worker's ClaimNextRun
+// skips runs of local-runtime agents, and ClaimNextRunForAgent atomically
+// claims that agent's queued runs FIFO without ever re-claiming a running
+// one.
+func TestClaimNextRunForAgentIntegration(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	creatorID, serverAgentID, issueID := seedAgentRuntime(t, ctx, pool)
+	localAgentID := seedLocalAgent(t, ctx, pool, creatorID, "LocalWorker", "local")
+
+	agents := NewAgentStore(pool)
+	got, err := agents.GetAgent(ctx, localAgentID)
+	if err != nil {
+		t.Fatalf("get local agent: %v", err)
+	}
+	if got.Runtime != "local" {
+		t.Fatalf("local agent runtime = %q, want local", got.Runtime)
+	}
+	got, err = agents.GetAgent(ctx, serverAgentID)
+	if err != nil {
+		t.Fatalf("get server agent: %v", err)
+	}
+	if got.Runtime != "server" {
+		t.Fatalf("server agent runtime = %q, want server", got.Runtime)
+	}
+
+	runs := NewRunStore(pool)
+	rLocal, err := runs.CreateRun(ctx, &domain.Run{AgentID: localAgentID, IssueID: issueID, Trigger: "assigned"})
+	if err != nil {
+		t.Fatalf("create local run: %v", err)
+	}
+	rServer, err := runs.CreateRun(ctx, &domain.Run{AgentID: serverAgentID, IssueID: issueID, Trigger: "assigned"})
+	if err != nil {
+		t.Fatalf("create server run: %v", err)
+	}
+
+	// The server-side worker must not steal runs of local-runtime agents.
+	c, err := runs.ClaimNextRun(ctx)
+	if err != nil {
+		t.Fatalf("claim by server worker: %v", err)
+	}
+	if c.ID != rServer.ID {
+		t.Fatalf("server worker claimed %+v, want run %s", c, rServer.ID)
+	}
+	if _, err := runs.ClaimNextRun(ctx); err != store.ErrNotFound {
+		t.Fatalf("server worker claimed a local run: err = %v, want ErrNotFound", err)
+	}
+
+	// The local runtime claims only its own agent's runs, FIFO, and a
+	// running run is never handed out twice.
+	c1, err := runs.ClaimNextRunForAgent(ctx, localAgentID)
+	if err != nil {
+		t.Fatalf("claim for local agent: %v", err)
+	}
+	if c1.ID != rLocal.ID || c1.Status != "running" || c1.StartedAt == nil {
+		t.Fatalf("c1 = %+v", c1)
+	}
+	if _, err := runs.ClaimNextRunForAgent(ctx, localAgentID); err != store.ErrNotFound {
+		t.Fatalf("re-claim err = %v, want ErrNotFound", err)
+	}
+	if _, err := runs.ClaimNextRunForAgent(ctx, serverAgentID); err != store.ErrNotFound {
+		t.Fatalf("server agent claim err = %v, want ErrNotFound", err)
+	}
+}
+
 func TestRunStoreLifecycleIntegration(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()

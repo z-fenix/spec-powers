@@ -52,20 +52,29 @@ func (f *fakeLLM) Complete(_ context.Context, system, user string) (string, erro
 type fakeIssueStore struct {
 	store.IssueStore
 	issue   *domain.Issue
+	extra   map[string]*domain.Issue
 	updated []*domain.Issue
 }
 
 func (f *fakeIssueStore) GetIssue(_ context.Context, id string) (*domain.Issue, error) {
-	if f.issue == nil || f.issue.ID != id {
-		return nil, store.ErrNotFound
+	if f.issue != nil && f.issue.ID == id {
+		cp := *f.issue
+		return &cp, nil
 	}
-	cp := *f.issue
-	return &cp, nil
+	if i, ok := f.extra[id]; ok {
+		cp := *i
+		return &cp, nil
+	}
+	return nil, store.ErrNotFound
 }
 
 func (f *fakeIssueStore) UpdateIssue(_ context.Context, i *domain.Issue) (*domain.Issue, error) {
 	cp := *i
-	f.issue = &cp
+	if f.issue != nil && f.issue.ID == i.ID {
+		f.issue = &cp
+	} else if _, ok := f.extra[i.ID]; ok {
+		f.extra[i.ID] = &cp
+	}
 	f.updated = append(f.updated, &cp)
 	return &cp, nil
 }

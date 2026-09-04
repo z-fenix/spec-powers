@@ -34,6 +34,10 @@ type CreateInput struct {
 	Name        string
 	Description string
 	Skills      []string
+	// Runtime is "server" (default) or "local". A local agent's runs are
+	// claimed and executed by its registered local runtime, not by the
+	// server worker.
+	Runtime string
 }
 
 type UpdateInput struct {
@@ -65,6 +69,10 @@ func (s *Service) CreateAgent(ctx context.Context, creatorID string, in CreateIn
 	if err := s.validateSkills(ctx, in.Skills); err != nil {
 		return nil, err
 	}
+	runtime := in.Runtime
+	if runtime == "" {
+		runtime = "server"
+	}
 	password := make([]byte, 32)
 	if _, err := rand.Read(password); err != nil {
 		return nil, httpapi.ErrInternal("generate agent password failed")
@@ -88,6 +96,7 @@ func (s *Service) CreateAgent(ctx context.Context, creatorID string, in CreateIn
 		Name:        in.Name,
 		Description: in.Description,
 		Skills:      in.Skills,
+		Runtime:     runtime,
 		CreatedBy:   creatorID,
 	})
 	if err != nil {

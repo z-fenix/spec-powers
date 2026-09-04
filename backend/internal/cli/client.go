@@ -108,6 +108,73 @@ type LoginResult struct {
 	User  User   `json:"user"`
 }
 
+type Agent struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Skills      []string `json:"skills"`
+	Runtime     string   `json:"runtime"`
+	CreatedBy   string   `json:"created_by"`
+}
+
+type AgentRegisterResult struct {
+	Agent Agent  `json:"agent"`
+	Token string `json:"token"`
+}
+
+// RunRow mirrors a run row for the runtime claim/finish endpoints.
+type RunRow struct {
+	ID         string  `json:"id"`
+	AgentID    string  `json:"agent_id"`
+	IssueID    string  `json:"issue_id"`
+	Trigger    string  `json:"trigger"`
+	Status     string  `json:"status"`
+	Error      string  `json:"error"`
+	CreatedAt  string  `json:"created_at"`
+	StartedAt  *string `json:"started_at,omitempty"`
+	FinishedAt *string `json:"finished_at,omitempty"`
+}
+
+// RunContext is the issue-scoped payload behind the executor's read tools:
+// the issue itself, every comment (including other agents'), the metadata
+// bag and the project resources.
+type RunContext struct {
+	Issue     RuntimeIssue      `json:"issue"`
+	Comments  []RuntimeComment  `json:"comments"`
+	Metadata  []RuntimeMetadata `json:"metadata"`
+	Resources []RuntimeResource `json:"resources"`
+}
+
+type RuntimeIssue struct {
+	ID          string `json:"id"`
+	ProjectID   string `json:"project_id"`
+	ParentID    string `json:"parent_id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+	AssigneeID  string `json:"assignee_id"`
+}
+
+type RuntimeComment struct {
+	ID       string `json:"id"`
+	ParentID string `json:"parent_id"`
+	AuthorID string `json:"author_id"`
+	Content  string `json:"content"`
+}
+
+type RuntimeMetadata struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	Type  string `json:"type"`
+}
+
+type RuntimeResource struct {
+	ID      string `json:"id"`
+	Type    string `json:"type"`
+	Label   string `json:"label"`
+	Pointer string `json:"pointer"`
+}
+
 type Change struct {
 	ID        string `json:"id"`
 	ProjectID string `json:"project_id"`
@@ -173,6 +240,76 @@ func (c *Client) Login(email, password string) (LoginResult, error) {
 		"email": email, "password": password,
 	}, &res)
 	return res, err
+}
+
+// RegisterAgent creates a local-runtime agent and returns its runtime
+// credential token.
+func (c *Client) RegisterAgent(name, description string, skills []string) (AgentRegisterResult, error) {
+	var res AgentRegisterResult
+	err := c.do(http.MethodPost, "/agents/register", map[string]any{
+		"name": name, "description": description, "skills": skills,
+	}, &res)
+	return res, err
+}
+
+// DeleteAgent removes the agent record (revokes its runtime credential).
+func (c *Client) DeleteAgent(id string) error {
+	return c.do(http.MethodDelete, "/agents/"+id, nil, nil)
+}
+
+// ---- agent runtime endpoints ----
+
+// ClaimRun claims the oldest queued run of the credential's agent. A nil
+// run (JSON null) means the queue is empty, not an error.
+func (c *Client) ClaimRun() (*RunRow, error) {
+	var res struct {
+		Run *RunRow `json:"run"`
+	}
+	if err := c.do(http.MethodPost, "/runtime/claim", nil, &res); err != nil {
+		return nil, err
+	}
+	return res.Run, nil
+}
+
+// FinishRun reports a run's terminal state.
+func (c *Client) FinishRun(runID, status, errMsg string) error {
+	return c.do(http.MethodPost, "/runtime/runs/"+runID+"/finish", map[string]string{
+		"status": status, "error": errMsg,
+	}, nil)
+}
+
+// AppendRunLog streams one run log entry to the server.
+func (c *Client) AppendRunLog(runID, kind, content string) error {
+	return c.do(http.MethodPost, "/runtime/runs/"+runID+"/log", map[string]string{
+		"kind": kind, "content": content,
+	}, nil)
+}
+
+// GetRunContext reads the issue, its comments, metadata and resources.
+func (c *Client) GetRunContext(issueID string) (*RunContext, error) {
+	var res RunContext
+	if err := c.do(http.MethodGet, "/runtime/issues/"+issueID, nil, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// PostIssueComment comments on the issue as the credential's agent.
+func (c *Client) PostIssueComment(issueID, content, parentCommentID string) (string, error) {
+	var res struct {
+		CommentID string `json:"comment_id"`
+	}
+	err := c.do(http.MethodPost, "/runtime/issues/"+issueID+"/comments", map[string]string{
+		"content": content, "parent_comment_id": parentCommentID,
+	}, &res)
+	return res.CommentID, err
+}
+
+// SetIssueStatus moves the issue's status (server validates the transition).
+func (c *Client) SetIssueStatus(issueID, status string) error {
+	return c.do(http.MethodPost, "/runtime/issues/"+issueID+"/status", map[string]string{
+		"status": status,
+	}, nil)
 }
 
 // GetChangeByIssue returns the change running for an issue, or an *APIError
@@ -324,6 +461,22 @@ func (c *Client) SubmitVerify(changeID, content string) (string, bool, error) {
 		return "", false, err
 	}
 	return res.Result, res.Passed, nil
+}
+
+// SubmitVerifyReport stores a verify report and returns the created verify
+// artifact (used by the runtime flow driver).
+func (c *Client) SubmitVerifyReport(changeID, content string) (*Artifact, bool, error) {
+	var res struct {
+		Artifact Artifact `json:"artifact"`
+		Passed   bool     `json:"passed"`
+	}
+	err := c.do(http.MethodPost, "/changes/"+changeID+"/verify", map[string]string{
+		"content": content,
+	}, &res)
+	if err != nil {
+		return nil, false, err
+	}
+	return &res.Artifact, res.Passed, nil
 }
 
 func (c *Client) Archive(changeID string) (*Change, error) {

@@ -21,16 +21,17 @@ type handlerFixture struct {
 	handler *Handler
 	// agentRoutes / runRoutes mirror the production mount (prefix + Mount)
 	// so URL params and query strings behave exactly as deployed.
-	agentRoutes http.Handler
-	runRoutes   http.Handler
-	tokens      *auth.TokenService
-	agents      *fakeAgents
-	runs        *fakeRuns
-	logs        *fakeLogs
-	issues      *fakeIssueStore
-	queue       *Queue
-	svc         *Service
-	agentID     string
+	agentRoutes   http.Handler
+	runRoutes     http.Handler
+	tokens        *auth.TokenService
+	runtimeTokens *auth.TokenService
+	agents        *fakeAgents
+	runs          *fakeRuns
+	logs          *fakeLogs
+	issues        *fakeIssueStore
+	queue         *Queue
+	svc           *Service
+	agentID       string
 }
 
 func setupHandler(t *testing.T) *handlerFixture {
@@ -49,12 +50,13 @@ func setupHandler(t *testing.T) *handlerFixture {
 	}
 
 	tokens := auth.NewTokenService("test-secret", 15*time.Minute)
-	h := NewHandler(svc, queue, runs, logs, issues, tokens)
+	runtimeTokens := auth.NewTokenService("test-secret", time.Hour)
+	h := NewHandler(svc, queue, runs, logs, issues, tokens, runtimeTokens)
 	root := chi.NewRouter()
 	root.Mount("/agents", h.AgentRoutes())
 	root.Mount("/runs", h.RunRoutes())
 	return &handlerFixture{
-		handler: h, agentRoutes: root, runRoutes: root, tokens: tokens,
+		handler: h, agentRoutes: root, runRoutes: root, tokens: tokens, runtimeTokens: runtimeTokens,
 		agents: agents, runs: runs, logs: logs, issues: issues,
 		queue: queue, svc: svc, agentID: a.ID,
 	}
@@ -89,6 +91,51 @@ func decodeBody(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
 }
 
 // ---- agent CRUD ----
+
+// ---- agent registration ----
+
+func TestRegisterAgentIssuesRuntimeToken(t *testing.T) {
+	f := setupHandler(t)
+	token := mustToken(t, f.tokens, "alice")
+	routes := f.agentRoutes
+
+	w := doReq(t, routes, token, http.MethodPost, "/agents/register", map[string]any{
+		"name": "LocalWorker", "description": "runs on my machine", "skills": []string{"brainstorm"},
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("register code = %d, body %s", w.Code, w.Body.String())
+	}
+	body := decodeBody(t, w)
+	agent := body["agent"].(map[string]any)
+	if agent["name"] != "LocalWorker" || agent["id"] == "" {
+		t.Fatalf("agent = %v", agent)
+	}
+	tok, _ := body["token"].(string)
+	if tok == "" {
+		t.Fatalf("runtime token missing: %v", body)
+	}
+	if subject, err := f.runtimeTokens.Verify(tok); err != nil || subject != agent["id"] {
+		t.Fatalf("token verify: subject=%q err=%v, want agent id %v", subject, err, agent["id"])
+	}
+	// The registered agent is a local-runtime agent.
+	stored, _ := f.agents.GetAgent(context.Background(), agent["id"].(string))
+	if stored.Runtime != "local" {
+		t.Fatalf("stored runtime = %q, want local", stored.Runtime)
+	}
+
+	// Unauthenticated registration is refused.
+	w = doReq(t, routes, "", http.MethodPost, "/agents/register", map[string]any{"name": "Nope"})
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated register code = %d, want 401", w.Code)
+	}
+	// Unknown skill is refused.
+	w = doReq(t, routes, token, http.MethodPost, "/agents/register", map[string]any{
+		"name": "Bad", "skills": []string{"nope"},
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("unknown skill register code = %d, want 400", w.Code)
+	}
+}
 
 func TestAgentRoutesAuthRequired(t *testing.T) {
 	f := setupHandler(t)

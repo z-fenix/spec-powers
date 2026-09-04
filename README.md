@@ -92,6 +92,24 @@ sp archive [--change <change-id>]
 - 输出：默认人类可读，任意命令加 `--json` 输出结构化结果。
 - 退出码：`0` 成功；`1` 门禁未过或 API 错误；`2` 用法错误。
 
+### 本机 agent（注册 / 本地运行时）
+
+```bash
+# 在服务器上注册本机 agent（runtime=local），运行凭证存入 ~/.sp/agents/<name>.json
+sp agent register --name worker [--description "本机工作机"] [--force] [SKILL...]
+
+# 前台轮询模式：领取指派给本 agent 的 run，本地执行 LLM 工具循环，
+# 评论 / 状态更新 / run 日志回传服务器（需要 SP_LLM_API_KEY / SP_LLM_MODEL）
+sp agent run [--name worker] [--once] [--poll 3s] [--workdir PATH]
+
+# 注销：删除服务器上的 agent（凭证随之失效）并清除本地凭证
+sp agent deregister [--name worker]
+```
+
+- 领取幂等：服务端 `POST /api/v1/runtime/claim` 以 `FOR UPDATE SKIP LOCKED` 原子领取，同一 run 不会被两个运行时同时执行。
+- 多 agent 协调：多个 agent 并存、issue 可指派给不同 agent；运行时可读 issue 上全部评论与产物；评论 @其他 agent 会为其入队 run（mention 触发），由对方的运行时领取执行。
+- 服务端 worker 不领取 runtime=local 的 agent 的 run——它们只能被本机运行时领取。
+
 ## 测试
 
 ```bash
@@ -157,6 +175,13 @@ cd frontend && npm test -- --run && npm run build
 | GET | `/skills` | 技能包列表（内嵌 superpowers 流程技能，按 flow 顺序） |
 | GET | `/skills/{key}` | 读取单个技能的完整指令（brainstorm / write-plan / subagent-driven-development） |
 | GET | `/changes/{cid}/skills/next` | 按 change 的 phase/status 解析下一个应加载的技能 |
+| POST | `/agents/register` | 注册本机 agent（runtime=local），返回运行凭证（长时效 token，存 `~/.sp/agents/`） |
+| POST | `/runtime/claim` | 本机运行时原子领取本 agent 的最旧 queued run（`FOR UPDATE SKIP LOCKED`，空队列返回 `{"run": null}`） |
+| GET | `/runtime/issues/{iid}` | 运行时读取 issue 上下文（issue + 全部评论 + 元数据 + 项目资源；要求本 agent 在该 issue 上持有 run） |
+| POST | `/runtime/issues/{iid}/comments` | 运行时以 agent 身份发评论（触发 mention 联动） |
+| POST | `/runtime/issues/{iid}/status` | 运行时更新 issue 状态（校验状态机） |
+| POST | `/runtime/runs/{rid}/log` | 追加 run 日志（llm_request / llm_response / tool_call / tool_result / error） |
+| POST | `/runtime/runs/{rid}/finish` | 上报 run 终态（`{status: done\|failed, error?}`） |
 
 ### Issue 状态机
 

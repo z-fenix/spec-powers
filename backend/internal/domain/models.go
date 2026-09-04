@@ -168,12 +168,15 @@ type Artifact struct {
 
 // Agent is a runnable agent identity. It is backed by a user row so issues
 // can be assigned to it and it can author comments. Skills lists the keys of
-// the skill packages the runtime loads for this agent.
+// the skill packages the runtime loads for this agent. Runtime is "server"
+// (default: runs execute in the server's worker loop) or "local" (runs are
+// claimed and executed by the agent's registered local runtime).
 type Agent struct {
 	ID          string
 	Name        string
 	Description string
 	Skills      []string
+	Runtime     string
 	CreatedBy   string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time

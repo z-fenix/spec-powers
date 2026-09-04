@@ -182,9 +182,23 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	})
 	queue := agent.NewQueue(runs, runLogs, agents, executor).WithNotifier(notificationSvc, issues)
 	issueService = issueService.WithRunTrigger(agent.NewTrigger(agents, runs))
-	agentHandler := agent.NewHandler(agentSvc, queue, runs, runLogs, issues, tokens)
+	// Long-lived credentials for locally registered agent runtimes (sp agent
+	// register). Revocation is deleting the agent.
+	runtimeTokens := auth.NewTokenService(cfg.JWTSecret, agent.RuntimeTokenTTL)
+	agentHandler := agent.NewHandler(agentSvc, queue, runs, runLogs, issues, tokens, runtimeTokens)
 	workerCtx, stopWorker := context.WithCancel(context.Background())
 	go queue.Loop(workerCtx)
+	runtimeHandler := agent.NewRuntimeHandler(agent.RuntimeHandlerDeps{
+		Agents:      agents,
+		Runs:        runs,
+		Logs:        runLogs,
+		Issues:      issues,
+		Comments:    comments,
+		Metadata:    metadata,
+		Projects:    projects,
+		Tokens:      tokens,
+		MentionHook: mentionTrigger.OnComment,
+	})
 
 	return &Server{
 		Handler: httpapi.NewRouter(httpapi.Deps{
@@ -195,6 +209,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 			Agents:  agentHandler.AgentRoutes(),
 			Runs:    agentHandler.RunRoutes(),
 			Notifs:  notificationHandler.Routes(),
+			Runtime: runtimeHandler.Routes(),
 		}),
 		pool:       pool,
 		ownsPool:   ownsPool,

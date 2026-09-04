@@ -27,6 +27,9 @@ Usage:
   sp skill  install [KEY...] [--dir PATH] [--agent claude-code|generic] [--force]
   sp skill  list --installed [--dir PATH] [--agent claude-code|generic]
   sp skill  uninstall KEY... [--dir PATH] [--agent claude-code|generic]
+  sp agent  register --name NAME [--description TEXT] [--force] [SKILL...]
+  sp agent  run [--name NAME] [--once] [--poll DURATION] [--workdir PATH]
+  sp agent  deregister [--name NAME]
   sp next-skill [--change ID]
   sp artifact write <KIND> [--file PATH | --content TEXT] [--change ID]
   sp guard  [--change ID]
@@ -87,6 +90,19 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return cmdVerify(args[1:], stdout, stderr)
 	case "archive":
 		return cmdArchive(args[1:], stdout, stderr)
+	case "agent":
+		if len(args) >= 2 {
+			switch args[1] {
+			case "register":
+				return cmdAgentRegister(args[2:], stdout, stderr)
+			case "deregister":
+				return cmdAgentDeregister(args[2:], stdout, stderr)
+			case "run":
+				return cmdAgentRun(args[2:], stdout, stderr)
+			}
+		}
+		fmt.Fprintln(stderr, "usage: sp agent register|run|deregister")
+		return 2
 	case "help", "-h", "--help":
 		fmt.Fprintln(stdout, usage)
 		return 0

@@ -21,10 +21,13 @@ type fakeRuns struct {
 	order   []string // creation order
 	nextID  int
 	claimed map[string]bool
+	// localAgents mirrors the postgres ClaimNextRun semantics: runs of
+	// local-runtime agents are invisible to the server worker.
+	localAgents map[string]bool
 }
 
 func newFakeRuns() *fakeRuns {
-	return &fakeRuns{byID: map[string]*domain.Run{}, claimed: map[string]bool{}}
+	return &fakeRuns{byID: map[string]*domain.Run{}, claimed: map[string]bool{}, localAgents: map[string]bool{}}
 }
 
 func (f *fakeRuns) CreateRun(_ context.Context, r *domain.Run) (*domain.Run, error) {
@@ -75,11 +78,28 @@ func (f *fakeRuns) ClaimNextRun(_ context.Context) (*domain.Run, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, id := range f.order {
-		if f.byID[id].Status == "queued" {
-			f.byID[id].Status = "running"
+		r := f.byID[id]
+		if r.Status == "queued" && !f.localAgents[r.AgentID] {
+			r.Status = "running"
 			now := time.Now()
-			f.byID[id].StartedAt = &now
-			cp := *f.byID[id]
+			r.StartedAt = &now
+			cp := *r
+			return &cp, nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
+func (f *fakeRuns) ClaimNextRunForAgent(_ context.Context, agentID string) (*domain.Run, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, id := range f.order {
+		r := f.byID[id]
+		if r.Status == "queued" && r.AgentID == agentID {
+			r.Status = "running"
+			now := time.Now()
+			r.StartedAt = &now
+			cp := *r
 			return &cp, nil
 		}
 	}

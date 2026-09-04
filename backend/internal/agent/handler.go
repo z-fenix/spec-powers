@@ -13,6 +13,11 @@ import (
 	"specpowers/backend/internal/store"
 )
 
+// RuntimeTokenTTL is how long a locally registered agent's runtime
+// credential stays valid. Revocation is deleting the agent (deregister):
+// runtime endpoints require an existing agent row.
+const RuntimeTokenTTL = 365 * 24 * time.Hour
+
 // Handler serves the agent and run REST endpoints. AgentRoutes mounts at
 // /agents, RunRoutes at /runs.
 type Handler struct {
@@ -22,16 +27,20 @@ type Handler struct {
 	logs   store.RunLogStore
 	issues store.IssueStore
 	tokens *auth.TokenService
+	// runtimeTokens issues the long-lived credentials returned by
+	// POST /agents/register; same secret as tokens.
+	runtimeTokens *auth.TokenService
 }
 
-func NewHandler(svc *Service, queue *Queue, runs store.RunStore, logs store.RunLogStore, issues store.IssueStore, tokens *auth.TokenService) *Handler {
-	return &Handler{svc: svc, queue: queue, runs: runs, logs: logs, issues: issues, tokens: tokens}
+func NewHandler(svc *Service, queue *Queue, runs store.RunStore, logs store.RunLogStore, issues store.IssueStore, tokens, runtimeTokens *auth.TokenService) *Handler {
+	return &Handler{svc: svc, queue: queue, runs: runs, logs: logs, issues: issues, tokens: tokens, runtimeTokens: runtimeTokens}
 }
 
 func (h *Handler) AgentRoutes() http.Handler {
 	r := chi.NewRouter()
 	r.Use(auth.RequireAuth(h.tokens))
 	r.Post("/", h.createAgent)
+	r.Post("/register", h.registerAgent)
 	r.Get("/", h.listAgents)
 	r.Route("/{agentID}", func(r chi.Router) {
 		r.Get("/", h.getAgent)
@@ -63,6 +72,7 @@ type agentDTO struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Skills      []string `json:"skills"`
+	Runtime     string   `json:"runtime"`
 	CreatedBy   string   `json:"created_by"`
 }
 
@@ -71,7 +81,11 @@ func toAgentDTO(a *domain.Agent) agentDTO {
 	if skills == nil {
 		skills = []string{}
 	}
-	return agentDTO{ID: a.ID, Name: a.Name, Description: a.Description, Skills: skills, CreatedBy: a.CreatedBy}
+	runtime := a.Runtime
+	if runtime == "" {
+		runtime = "server"
+	}
+	return agentDTO{ID: a.ID, Name: a.Name, Description: a.Description, Skills: skills, Runtime: runtime, CreatedBy: a.CreatedBy}
 }
 
 func (h *Handler) createAgent(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +108,36 @@ func (h *Handler) createAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpapi.JSON(w, http.StatusCreated, map[string]any{"agent": toAgentDTO(a)})
+}
+
+// registerAgent creates a local-runtime agent and issues its runtime
+// credential (a long-lived bearer token for the agent's identity).
+func (h *Handler) registerAgent(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		Skills      []string `json:"skills"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpapi.Error(w, httpapi.ErrInvalid("malformed JSON body"))
+		return
+	}
+	a, err := h.svc.CreateAgent(r.Context(), auth.UserIDFrom(r.Context()), CreateInput{
+		Name:        req.Name,
+		Description: req.Description,
+		Skills:      req.Skills,
+		Runtime:     "local",
+	})
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	token, err := h.runtimeTokens.Issue(a.ID)
+	if err != nil {
+		httpapi.Error(w, httpapi.ErrInternal("issue runtime token failed"))
+		return
+	}
+	httpapi.JSON(w, http.StatusCreated, map[string]any{"agent": toAgentDTO(a), "token": token})
 }
 
 func (h *Handler) listAgents(w http.ResponseWriter, r *http.Request) {

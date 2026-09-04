@@ -163,6 +163,31 @@ func TestCreateAgentCreatesUserAndAgent(t *testing.T) {
 	}
 }
 
+func TestCreateAgentRuntimeKind(t *testing.T) {
+	svc, agents, _ := setupService(t)
+	ctx := context.Background()
+
+	local, err := svc.CreateAgent(ctx, "creator-1", CreateInput{Name: "LocalWorker", Runtime: "local"})
+	if err != nil {
+		t.Fatalf("create local agent: %v", err)
+	}
+	if local.Runtime != "local" {
+		t.Fatalf("local agent runtime = %q, want local", local.Runtime)
+	}
+	stored, _ := agents.GetAgent(ctx, local.ID)
+	if stored.Runtime != "local" {
+		t.Fatalf("stored local agent runtime = %q, want local", stored.Runtime)
+	}
+
+	def, err := svc.CreateAgent(ctx, "creator-1", CreateInput{Name: "ServerWorker"})
+	if err != nil {
+		t.Fatalf("create default agent: %v", err)
+	}
+	if def.Runtime != "server" {
+		t.Fatalf("default agent runtime = %q, want server", def.Runtime)
+	}
+}
+
 func TestCreateAgentValidation(t *testing.T) {
 	svc, _, _ := setupService(t)
 	ctx := context.Background()

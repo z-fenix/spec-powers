@@ -173,3 +173,21 @@ func TestRouterMountsAgentsAndRuns(t *testing.T) {
 		t.Error("runs handler not reached under /api/v1/runs")
 	}
 }
+
+func TestRouterMountsRuntime(t *testing.T) {
+	reached := false
+	stub := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		if r.URL.Path != "/claim" {
+			t.Errorf("stripped path = %q, want /claim", r.URL.Path)
+		}
+	})
+	h := NewRouter(Deps{Runtime: stub})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/claim", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if !reached {
+		t.Error("runtime handler not reached under /api/v1/runtime")
+	}
+}

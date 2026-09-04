@@ -17,11 +17,11 @@ type AgentStore struct {
 
 func NewAgentStore(pool *pgxpool.Pool) *AgentStore { return &AgentStore{pool: pool} }
 
-const agentColumns = `id, name, description, skills, created_by::text, created_at, updated_at`
+const agentColumns = `id, name, description, skills, runtime, created_by::text, created_at, updated_at`
 
 func scanAgent(row pgx.Row) (*domain.Agent, error) {
 	a := &domain.Agent{}
-	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.Skills, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt)
+	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.Skills, &a.Runtime, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, store.ErrNotFound
 	}
@@ -32,11 +32,15 @@ func scanAgent(row pgx.Row) (*domain.Agent, error) {
 }
 
 func (s *AgentStore) CreateAgent(ctx context.Context, a *domain.Agent) (*domain.Agent, error) {
+	runtime := a.Runtime
+	if runtime == "" {
+		runtime = "server"
+	}
 	return scanAgent(s.pool.QueryRow(ctx, `
-		INSERT INTO agents (id, name, description, skills, created_by)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO agents (id, name, description, skills, runtime, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING `+agentColumns,
-		a.ID, a.Name, a.Description, a.Skills, a.CreatedBy))
+		a.ID, a.Name, a.Description, a.Skills, runtime, a.CreatedBy))
 }
 
 func (s *AgentStore) GetAgent(ctx context.Context, id string) (*domain.Agent, error) {
@@ -62,10 +66,10 @@ func (s *AgentStore) ListAgents(ctx context.Context) ([]domain.Agent, error) {
 
 func (s *AgentStore) UpdateAgent(ctx context.Context, a *domain.Agent) (*domain.Agent, error) {
 	return scanAgent(s.pool.QueryRow(ctx, `
-		UPDATE agents SET name = $2, description = $3, skills = $4, updated_at = now()
+		UPDATE agents SET name = $2, description = $3, skills = $4, runtime = $5, updated_at = now()
 		WHERE id = $1
 		RETURNING `+agentColumns,
-		a.ID, a.Name, a.Description, a.Skills))
+		a.ID, a.Name, a.Description, a.Skills, a.Runtime))
 }
 
 func (s *AgentStore) DeleteAgent(ctx context.Context, id string) error {
@@ -152,10 +156,25 @@ func (s *RunStore) ClaimNextRun(ctx context.Context) (*domain.Run, error) {
 	return scanRun(s.pool.QueryRow(ctx, `
 		UPDATE runs SET status = 'running', started_at = now()
 		WHERE id = (
-			SELECT id FROM runs WHERE status = 'queued'
-			ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED
+			SELECT r.id FROM runs r
+			JOIN agents a ON a.id = r.agent_id AND a.runtime <> 'local'
+			WHERE r.status = 'queued'
+			ORDER BY r.created_at, r.id LIMIT 1 FOR UPDATE SKIP LOCKED
 		)
 		RETURNING `+runColumns))
+}
+
+// ClaimNextRunForAgent atomically moves the oldest queued run of one agent
+// to running. Concurrent claimers cannot receive the same run: the inner
+// SELECT locks the row (SKIP LOCKED) before the update.
+func (s *RunStore) ClaimNextRunForAgent(ctx context.Context, agentID string) (*domain.Run, error) {
+	return scanRun(s.pool.QueryRow(ctx, `
+		UPDATE runs SET status = 'running', started_at = now()
+		WHERE id = (
+			SELECT id FROM runs WHERE agent_id = $1 AND status = 'queued'
+			ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED
+		)
+		RETURNING `+runColumns, agentID))
 }
 
 func (s *RunStore) FinishRun(ctx context.Context, id, status, errMsg string) (*domain.Run, error) {

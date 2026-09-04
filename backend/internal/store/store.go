@@ -115,10 +115,16 @@ type RunStore interface {
 	CreateRun(ctx context.Context, r *domain.Run) (*domain.Run, error)
 	GetRun(ctx context.Context, id string) (*domain.Run, error)
 	ListRuns(ctx context.Context, filter RunFilter) ([]domain.Run, error)
-	// ClaimNextRun atomically moves the oldest queued run to running,
-	// stamps started_at and returns it. Returns ErrNotFound when the queue
-	// is empty.
+	// ClaimNextRun atomically moves the oldest queued run of a non-local
+	// (server-executed) agent to running, stamps started_at and returns it.
+	// Returns ErrNotFound when the queue is empty. Runs of local-runtime
+	// agents are skipped: their registered local runtimes claim them via
+	// ClaimNextRunForAgent.
 	ClaimNextRun(ctx context.Context) (*domain.Run, error)
+	// ClaimNextRunForAgent atomically moves the oldest queued run of one
+	// agent to running. Returns ErrNotFound when that agent has no queued
+	// run.
+	ClaimNextRunForAgent(ctx context.Context, agentID string) (*domain.Run, error)
 	// FinishRun sets a run's terminal status ("done" or "failed") with an
 	// optional error message and stamps finished_at.
 	FinishRun(ctx context.Context, id, status, errMsg string) (*domain.Run, error)

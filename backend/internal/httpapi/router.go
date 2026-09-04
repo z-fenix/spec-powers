@@ -27,6 +27,7 @@ func ErrInternal(msg string) *AppError   { return &AppError{Status: 500, Code: "
 type Deps struct {
 	Auth    http.Handler
 	Project http.Handler
+	Changes http.Handler
 }
 
 func NewRouter(deps Deps) http.Handler {
@@ -43,6 +44,9 @@ func NewRouter(deps Deps) http.Handler {
 		}
 		if deps.Project != nil {
 			r.Mount("/projects", http.StripPrefix("/api/v1/projects", deps.Project))
+		}
+		if deps.Changes != nil {
+			r.Mount("/changes", http.StripPrefix("/api/v1/changes", deps.Changes))
 		}
 		r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 			Error(w, ErrNotFound("route not found"))

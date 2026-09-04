@@ -86,6 +86,11 @@ cd frontend && npm test -- --run && npm run build
 | GET | `/projects/{id}/issues/{iid}/metadata` | 元数据 KV 列表（按 key 排序） |
 | PUT | `/projects/{id}/issues/{iid}/metadata/{key}` | 设置元数据（upsert，body: `{value, type?}`；type: string/number/bool，缺省 string） |
 | DELETE | `/projects/{id}/issues/{iid}/metadata/{key}` | 删除元数据 |
+| GET | `/changes?issue_id={iid}` | issue 的工作流实例（classic 拆分，一 issue 一 change） |
+| GET | `/changes/{cid}` | change 详情（project_id / issue_id / phase / status） |
+| GET | `/changes/{cid}/artifacts` | 产物列表（每类 kind 的最新版本，按 proposal→specs→design→tasks 排序） |
+| GET | `/changes/{cid}/artifacts/{kind}` | 读取产物 markdown（kind: proposal/specs/design/tasks；`?version=N` 指定版本，缺省最新） |
+| GET | `/changes/{cid}/tasks` | tasks 条目与子 issue 的映射（按 stage、position 排序） |
 
 ### Issue 状态机
 

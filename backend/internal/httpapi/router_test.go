@@ -89,6 +89,24 @@ func TestRouterUnknownRouteUsesEnvelope(t *testing.T) {
 	}
 }
 
+func TestRouterMountsChanges(t *testing.T) {
+	reached := false
+	stub := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		if r.URL.Path != "/c1" {
+			t.Errorf("stripped path = %q, want /c1", r.URL.Path)
+		}
+	})
+	h := NewRouter(Deps{Changes: stub})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/changes/c1", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if !reached {
+		t.Error("changes handler not reached under /api/v1/changes")
+	}
+}
+
 func TestRecoverMiddleware(t *testing.T) {
 	h := Recover(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		panic("boom")

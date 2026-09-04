@@ -17,6 +17,7 @@ import (
 	"specpowers/backend/internal/issue"
 	"specpowers/backend/internal/project"
 	"specpowers/backend/internal/store/postgres"
+	"specpowers/backend/internal/workflow"
 )
 
 func main() {
@@ -45,6 +46,9 @@ func main() {
 	comments := postgres.NewCommentStore(pool)
 	attachments := postgres.NewAttachmentStore(pool)
 	metadata := postgres.NewIssueMetadataStore(pool)
+	changes := postgres.NewChangeStore(pool)
+	artifacts := postgres.NewArtifactStore(pool)
+	taskMappings := postgres.NewTaskMappingStore(pool)
 
 	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
 	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
@@ -59,10 +63,18 @@ func main() {
 		tokens,
 		issueHandler.Routes(),
 	)
+	workflowHandler := workflow.NewHandler(
+		workflow.NewService(changes, artifacts, taskMappings, issues, projects),
+		tokens,
+	)
 
 	srv := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           httpapi.NewRouter(httpapi.Deps{Auth: authHandler.Routes(), Project: projectHandler.Routes()}),
+		Addr: cfg.Addr,
+		Handler: httpapi.NewRouter(httpapi.Deps{
+			Auth:    authHandler.Routes(),
+			Project: projectHandler.Routes(),
+			Changes: workflowHandler.Routes(),
+		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

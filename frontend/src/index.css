@@ -148,3 +148,125 @@ body {
 .notice {
   color: #1a7f37;
 }
+
+/* ---- workflow progress ---- */
+.phase-stepper {
+  display: flex;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+}
+
+.phase-stepper li {
+  padding: 4px 12px;
+  border: 1px solid #d0d7de;
+  border-radius: 999px;
+  color: #57606a;
+}
+
+.phase-stepper li[data-state='done'] {
+  background: #dafbe1;
+  border-color: #1a7f37;
+  color: #1a7f37;
+}
+
+.phase-stepper li[data-state='current'] {
+  background: #ddf4ff;
+  border-color: #0969da;
+  color: #0969da;
+  font-weight: 600;
+}
+
+.guard-gates {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.guard-gates li[data-passed='true'] {
+  color: #1a7f37;
+}
+
+.guard-gates li[data-passed='false'] {
+  color: #cf222e;
+}
+
+/* ---- artifact viewer ---- */
+.artifact-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.artifact-tabs [role='tab'] {
+  padding: 6px 14px;
+  border: 1px solid #d0d7de;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: #f6f8fa;
+  cursor: pointer;
+}
+
+.artifact-tabs [aria-selected='true'] {
+  background: #fff;
+  font-weight: 600;
+}
+
+.artifact-content {
+  border: 1px solid #d0d7de;
+  border-radius: 0 6px 6px 6px;
+  padding: 12px 16px;
+  overflow-x: auto;
+}
+
+.markdown-body pre {
+  background: #f6f8fa;
+  padding: 8px;
+  overflow-x: auto;
+}
+
+.markdown-body code {
+  background: #f6f8fa;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+/* ---- notification center ---- */
+.notification-bell {
+  position: relative;
+  margin-right: 12px;
+}
+
+.notification-bell span {
+  margin-left: 4px;
+  background: #cf222e;
+  color: #fff;
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+.notification-list {
+  list-style: none;
+  padding: 0;
+}
+
+.notification-list li {
+  padding: 10px 12px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.notification-list li[data-read='false'] {
+  background: #ddf4ff;
+  font-weight: 600;
+}
+
+.notification-body {
+  margin: 4px 0 0;
+  font-weight: 400;
+  color: #57606a;
+}

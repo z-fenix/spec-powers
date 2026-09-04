@@ -20,6 +20,8 @@ import {
 } from '../api/issues'
 import { ApiError } from '../api/client'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
+import { WorkflowProgress } from '../components/WorkflowProgress'
+import { ArtifactViewer } from '../components/ArtifactViewer'
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError || err instanceof Error ? err.message : fallback
@@ -400,6 +402,9 @@ export function IssueDetailPage() {
         <h3>子任务</h3>
         <SubtaskTree projectId={id} parentId={issueId} reloadKey={1} />
       </div>
+
+      <WorkflowProgress issueId={issueId} />
+      <ArtifactViewer issueId={issueId} />
 
       <h3>评论</h3>
       {roots.map((c) => (

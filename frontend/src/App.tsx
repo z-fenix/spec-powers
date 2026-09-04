@@ -5,6 +5,7 @@ import { RequireAuth } from './components/RequireAuth'
 import { BoardPage } from './pages/BoardPage'
 import { IssueDetailPage } from './pages/IssueDetailPage'
 import { LoginPage } from './pages/LoginPage'
+import { NotificationsPage } from './pages/NotificationsPage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { ProjectsPage } from './pages/ProjectsPage'
 
@@ -19,6 +20,7 @@ export default function App() {
             <Route path="/projects/:id" element={<ProjectDetailPage />} />
             <Route path="/projects/:id/board" element={<BoardPage />} />
             <Route path="/projects/:id/issues/:issueId" element={<IssueDetailPage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
           </Route>
         </Route>
       </Routes>

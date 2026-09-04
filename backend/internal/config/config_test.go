@@ -44,6 +44,46 @@ func TestLoadOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadLLMDefaults(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Load with empty env: %v", err)
+	}
+	if cfg.LLMBaseURL != "https://api.openai.com/v1" {
+		t.Errorf("LLMBaseURL default = %q, want https://api.openai.com/v1", cfg.LLMBaseURL)
+	}
+	if cfg.LLMAPIKey != "" {
+		t.Errorf("LLMAPIKey default should be empty, got %q", cfg.LLMAPIKey)
+	}
+	if cfg.LLMModel != "" {
+		t.Errorf("LLMModel default should be empty (set per deployment), got %q", cfg.LLMModel)
+	}
+	if cfg.LLMPromptDir != "" {
+		t.Errorf("LLMPromptDir default should be empty (use embedded templates), got %q", cfg.LLMPromptDir)
+	}
+	if cfg.LLMMaxRetries != 2 {
+		t.Errorf("LLMMaxRetries default = %d, want 2", cfg.LLMMaxRetries)
+	}
+}
+
+func TestLoadLLMOverrides(t *testing.T) {
+	env := map[string]string{
+		"SP_LLM_BASE_URL":    "https://llm.example.com/v1",
+		"SP_LLM_API_KEY":     "sk-test",
+		"SP_LLM_MODEL":       "my-model",
+		"SP_LLM_PROMPT_DIR":  "/var/sp/prompts",
+		"SP_LLM_MAX_RETRIES": "3",
+	}
+	cfg, err := Load(func(k string) string { return env[k] })
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.LLMBaseURL != "https://llm.example.com/v1" || cfg.LLMAPIKey != "sk-test" ||
+		cfg.LLMModel != "my-model" || cfg.LLMPromptDir != "/var/sp/prompts" || cfg.LLMMaxRetries != 3 {
+		t.Errorf("LLM overrides not applied: %+v", cfg)
+	}
+}
+
 func TestLoadRejectsProductionWithoutSecret(t *testing.T) {
 	env := map[string]string{"SP_ENV": "production"}
 	_, err := Load(func(k string) string { return env[k] })

@@ -77,8 +77,15 @@ func TestWorkflowStoreIntegration(t *testing.T) {
 
 	var changeID string
 	t.Run("artifact versioning", func(t *testing.T) {
+		// changes are unique per issue: this subtest needs its own parent.
+		parent2, err := issues.CreateIssue(ctx, &domain.Issue{
+			ProjectID: proj.ID, Title: "parent 2", Status: "todo", Priority: "none", CreatedBy: owner.ID,
+		})
+		if err != nil {
+			t.Fatalf("create parent2: %v", err)
+		}
 		c, err := changes.CreateChange(ctx, &domain.Change{
-			ProjectID: proj.ID, IssueID: parent.ID, CreatedBy: owner.ID,
+			ProjectID: proj.ID, IssueID: parent2.ID, CreatedBy: owner.ID,
 		})
 		if err != nil {
 			t.Fatalf("create change: %v", err)
@@ -190,6 +197,34 @@ func TestWorkflowStoreIntegration(t *testing.T) {
 		}
 		if got[0].IssueID != child2.ID || got[0].Stage != 2 || got[0].Position != 0 {
 			t.Errorf("replaced mapping = %+v", got[0])
+		}
+	})
+
+	t.Run("change phase and status update", func(t *testing.T) {
+		parent3, err := issues.CreateIssue(ctx, &domain.Issue{
+			ProjectID: proj.ID, Title: "parent 3", Status: "todo", Priority: "none", CreatedBy: owner.ID,
+		})
+		if err != nil {
+			t.Fatalf("create parent3: %v", err)
+		}
+		c, err := changes.CreateChange(ctx, &domain.Change{
+			ProjectID: proj.ID, IssueID: parent3.ID, CreatedBy: owner.ID,
+		})
+		if err != nil {
+			t.Fatalf("create change: %v", err)
+		}
+		c.Phase = "design"
+		got, err := changes.UpdateChange(ctx, c)
+		if err != nil || got.Phase != "design" || got.Status != "active" {
+			t.Errorf("update phase = %+v, %v", got, err)
+		}
+		c.Status = "failed"
+		if _, err := changes.UpdateChange(ctx, c); err != nil {
+			t.Fatalf("update status to failed: %v", err)
+		}
+		reloaded, err := changes.GetChange(ctx, c.ID)
+		if err != nil || reloaded.Phase != "design" || reloaded.Status != "failed" {
+			t.Errorf("reloaded after updates = %+v, %v", reloaded, err)
 		}
 	})
 }

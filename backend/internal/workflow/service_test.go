@@ -20,6 +20,10 @@ func (f *fakeChanges) CreateChange(_ context.Context, c *domain.Change) (*domain
 	panic("not used in service tests")
 }
 
+func (f *fakeChanges) UpdateChange(_ context.Context, c *domain.Change) (*domain.Change, error) {
+	panic("not used in service tests")
+}
+
 func (f *fakeChanges) GetChange(_ context.Context, id string) (*domain.Change, error) {
 	c, ok := f.byID[id]
 	if !ok {

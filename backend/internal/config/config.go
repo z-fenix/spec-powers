@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 )
 
 type Config struct {
@@ -12,6 +13,11 @@ type Config struct {
 	JWTSecret     string
 	Env           string
 	AttachmentDir string
+	LLMBaseURL    string
+	LLMAPIKey     string
+	LLMModel      string
+	LLMPromptDir  string
+	LLMMaxRetries int
 }
 
 func Load(getenv func(string) string) (Config, error) {
@@ -21,6 +27,19 @@ func Load(getenv func(string) string) (Config, error) {
 		JWTSecret:     getenv("SP_JWT_SECRET"),
 		Env:           getenv("SP_ENV"),
 		AttachmentDir: getenv("SP_ATTACHMENT_DIR"),
+		LLMBaseURL:    getenv("SP_LLM_BASE_URL"),
+		LLMAPIKey:     getenv("SP_LLM_API_KEY"),
+		LLMModel:      getenv("SP_LLM_MODEL"),
+		LLMPromptDir:  getenv("SP_LLM_PROMPT_DIR"),
+	}
+	if cfg.LLMBaseURL == "" {
+		cfg.LLMBaseURL = "https://api.openai.com/v1"
+	}
+	cfg.LLMMaxRetries = 2
+	if v := getenv("SP_LLM_MAX_RETRIES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			cfg.LLMMaxRetries = n
+		}
 	}
 	if cfg.Addr == "" {
 		cfg.Addr = ":8080"

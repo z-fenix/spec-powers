@@ -101,6 +101,8 @@ type ChangeStore interface {
 	// GetChangeByIssue returns the change running for an issue; a change is
 	// unique per issue.
 	GetChangeByIssue(ctx context.Context, issueID string) (*domain.Change, error)
+	// UpdateChange persists the change's current phase and status.
+	UpdateChange(ctx context.Context, c *domain.Change) (*domain.Change, error)
 }
 
 type ArtifactStore interface {

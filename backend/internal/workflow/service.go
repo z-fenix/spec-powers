@@ -39,6 +39,7 @@ type Service struct {
 	mappings  store.TaskMappingStore
 	issues    issueLookup
 	projects  projectAccess
+	splitter  *Splitter
 }
 
 func NewService(changes store.ChangeStore, artifacts store.ArtifactStore, mappings store.TaskMappingStore, issues issueLookup, projects projectAccess) *Service {
@@ -49,6 +50,41 @@ func NewService(changes store.ChangeStore, artifacts store.ArtifactStore, mappin
 		issues:    issues,
 		projects:  projects,
 	}
+}
+
+// WithSplitter attaches the AI classic splitter; without it, StartSplit
+// reports the splitter as unconfigured.
+func (s *Service) WithSplitter(splitter *Splitter) *Service {
+	s.splitter = splitter
+	return s
+}
+
+// StartSplit runs the classic AI split for an issue: it creates the change,
+// generates the four artifacts, and creates the staged sub-issues. The
+// caller must be a project member.
+func (s *Service) StartSplit(ctx context.Context, userID, issueID string) (*domain.Change, []domain.TaskMapping, error) {
+	i, err := s.issues.GetIssue(ctx, issueID)
+	if err == store.ErrNotFound {
+		return nil, nil, httpapi.ErrNotFound("issue not found")
+	}
+	if err != nil {
+		return nil, nil, httpapi.ErrInternal("get issue failed")
+	}
+	if err := s.requireProjectRole(ctx, userID, i.ProjectID); err != nil {
+		return nil, nil, err
+	}
+	if s.splitter == nil {
+		return nil, nil, httpapi.ErrInvalid("splitter is not configured")
+	}
+	change, err := s.splitter.Run(ctx, userID, issueID)
+	if err != nil {
+		return nil, nil, err
+	}
+	tasks, err := s.mappings.ListTaskMappings(ctx, change.ID)
+	if err != nil {
+		return change, nil, httpapi.ErrInternal("list task mappings failed")
+	}
+	return change, tasks, nil
 }
 
 // requireChangeRole loads the change and enforces project-level access;

@@ -15,6 +15,7 @@ import (
 	"specpowers/backend/internal/config"
 	"specpowers/backend/internal/httpapi"
 	"specpowers/backend/internal/issue"
+	"specpowers/backend/internal/llm"
 	"specpowers/backend/internal/project"
 	"specpowers/backend/internal/store/postgres"
 	"specpowers/backend/internal/workflow"
@@ -52,7 +53,8 @@ func main() {
 
 	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
 	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
-	issueHandler := issue.NewHandler(issue.NewService(issues, projects, users), tokens).WithCollab(
+	issueService := issue.NewService(issues, projects, users)
+	issueHandler := issue.NewHandler(issueService, tokens).WithCollab(
 		collab.NewHandler(
 			collab.NewService(issues, projects, comments, attachments, metadata, cfg.AttachmentDir),
 			tokens,
@@ -63,10 +65,28 @@ func main() {
 		tokens,
 		issueHandler.Routes(),
 	)
-	workflowHandler := workflow.NewHandler(
-		workflow.NewService(changes, artifacts, taskMappings, issues, projects),
-		tokens,
-	)
+	workflowService := workflow.NewService(changes, artifacts, taskMappings, issues, projects)
+	if cfg.LLMAPIKey != "" && cfg.LLMModel != "" {
+		promptTemplates, err := workflow.LoadTemplates(cfg.LLMPromptDir)
+		if err != nil {
+			log.Fatalf("prompt templates: %v", err)
+		}
+		splitter := workflow.NewSplitter(workflow.SplitterDeps{
+			Client:     llm.NewOpenAIClient(cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel),
+			Changes:    changes,
+			Artifacts:  artifacts,
+			Mappings:   taskMappings,
+			Issues:     issues,
+			Creator:    issueService,
+			Contexts:   projects,
+			Templates:  promptTemplates,
+			MaxRetries: cfg.LLMMaxRetries,
+		})
+		workflowService = workflowService.WithSplitter(splitter)
+	} else {
+		log.Printf("warning: SP_LLM_API_KEY/SP_LLM_MODEL not set; AI splitting is disabled")
+	}
+	workflowHandler := workflow.NewHandler(workflowService, tokens)
 
 	srv := &http.Server{
 		Addr: cfg.Addr,

@@ -56,6 +56,13 @@ func (s *ChangeStore) GetChangeByIssue(ctx context.Context, issueID string) (*do
 		FROM changes WHERE issue_id = $1`, issueID))
 }
 
+func (s *ChangeStore) UpdateChange(ctx context.Context, c *domain.Change) (*domain.Change, error) {
+	return scanChange(s.pool.QueryRow(ctx, `
+		UPDATE changes SET phase = $2, status = $3, updated_at = now()
+		WHERE id = $1
+		RETURNING `+changeColumns, c.ID, c.Phase, c.Status))
+}
+
 // ---- ArtifactStore ----
 
 type ArtifactStore struct {

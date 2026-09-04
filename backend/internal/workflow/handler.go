@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -82,6 +83,7 @@ func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
 	r.Use(auth.RequireAuth(h.tokens))
 	r.Get("/", h.byIssue)
+	r.Post("/", h.startSplit)
 	r.Route("/{changeID}", func(r chi.Router) {
 		r.Get("/", h.get)
 		r.Get("/artifacts", h.listArtifacts)
@@ -97,6 +99,34 @@ func writeAppError(w http.ResponseWriter, err error) {
 		return
 	}
 	httpapi.Error(w, httpapi.ErrInternal("internal server error"))
+}
+
+type startSplitRequest struct {
+	IssueID string `json:"issue_id"`
+}
+
+// startSplit runs the AI classic split for an issue ("publishing" it) and
+// returns the change plus the generated task mappings.
+func (h *Handler) startSplit(w http.ResponseWriter, r *http.Request) {
+	var req startSplitRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpapi.Error(w, httpapi.ErrInvalid("body must be JSON with issue_id"))
+		return
+	}
+	if req.IssueID == "" {
+		httpapi.Error(w, httpapi.ErrInvalid("issue_id is required"))
+		return
+	}
+	change, tasks, err := h.svc.StartSplit(r.Context(), auth.UserIDFrom(r.Context()), req.IssueID)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	dtos := make([]taskDTO, 0, len(tasks))
+	for i := range tasks {
+		dtos = append(dtos, toTaskDTO(&tasks[i]))
+	}
+	httpapi.JSON(w, http.StatusCreated, map[string]any{"change": toChangeDTO(change), "tasks": dtos})
 }
 
 func (h *Handler) byIssue(w http.ResponseWriter, r *http.Request) {

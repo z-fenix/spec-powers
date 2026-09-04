@@ -95,6 +95,40 @@ type IssueMetadataStore interface {
 	DeleteIssueMetadata(ctx context.Context, issueID, key string) error
 }
 
+type AgentStore interface {
+	CreateAgent(ctx context.Context, a *domain.Agent) (*domain.Agent, error)
+	GetAgent(ctx context.Context, id string) (*domain.Agent, error)
+	ListAgents(ctx context.Context) ([]domain.Agent, error)
+	UpdateAgent(ctx context.Context, a *domain.Agent) (*domain.Agent, error)
+	DeleteAgent(ctx context.Context, id string) error
+}
+
+// RunFilter narrows ListRuns. Empty fields mean "no filter".
+type RunFilter struct {
+	IssueID string
+	AgentID string
+	Status  string
+}
+
+type RunStore interface {
+	CreateRun(ctx context.Context, r *domain.Run) (*domain.Run, error)
+	GetRun(ctx context.Context, id string) (*domain.Run, error)
+	ListRuns(ctx context.Context, filter RunFilter) ([]domain.Run, error)
+	// ClaimNextRun atomically moves the oldest queued run to running,
+	// stamps started_at and returns it. Returns ErrNotFound when the queue
+	// is empty.
+	ClaimNextRun(ctx context.Context) (*domain.Run, error)
+	// FinishRun sets a run's terminal status ("done" or "failed") with an
+	// optional error message and stamps finished_at.
+	FinishRun(ctx context.Context, id, status, errMsg string) (*domain.Run, error)
+}
+
+type RunLogStore interface {
+	// AppendRunLog adds one entry; Seq 0 means "next sequence for the run".
+	AppendRunLog(ctx context.Context, l *domain.RunLog) (*domain.RunLog, error)
+	ListRunLogs(ctx context.Context, runID string) ([]domain.RunLog, error)
+}
+
 type ChangeStore interface {
 	CreateChange(ctx context.Context, c *domain.Change) (*domain.Change, error)
 	GetChange(ctx context.Context, id string) (*domain.Change, error)

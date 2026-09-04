@@ -13,6 +13,7 @@ type Config struct {
 	JWTSecret     string
 	Env           string
 	AttachmentDir string
+	AgentWorkDir  string
 	LLMBaseURL    string
 	LLMAPIKey     string
 	LLMModel      string
@@ -27,6 +28,7 @@ func Load(getenv func(string) string) (Config, error) {
 		JWTSecret:     getenv("SP_JWT_SECRET"),
 		Env:           getenv("SP_ENV"),
 		AttachmentDir: getenv("SP_ATTACHMENT_DIR"),
+		AgentWorkDir:  getenv("SP_AGENT_WORK_DIR"),
 		LLMBaseURL:    getenv("SP_LLM_BASE_URL"),
 		LLMAPIKey:     getenv("SP_LLM_API_KEY"),
 		LLMModel:      getenv("SP_LLM_MODEL"),
@@ -49,6 +51,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.AttachmentDir == "" {
 		cfg.AttachmentDir = "data/attachments"
+	}
+	if cfg.AgentWorkDir == "" {
+		cfg.AgentWorkDir = "data/agent-work"
 	}
 	if cfg.DatabaseURL == "" {
 		cfg.DatabaseURL = "postgres://specpowers:specpowers@localhost:5432/specpowers?sslmode=disable"

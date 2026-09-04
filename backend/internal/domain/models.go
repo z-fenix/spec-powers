@@ -166,6 +166,45 @@ type Artifact struct {
 	CreatedAt time.Time
 }
 
+// Agent is a runnable agent identity. It is backed by a user row so issues
+// can be assigned to it and it can author comments. Skills lists the keys of
+// the skill packages the runtime loads for this agent.
+type Agent struct {
+	ID          string
+	Name        string
+	Description string
+	Skills      []string
+	CreatedBy   string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// Run is one execution of an agent on an issue. Trigger is what started it:
+// "assigned", "status_changed", "wakeup" or "manual". Status follows the
+// lifecycle queued → running → done | failed.
+type Run struct {
+	ID         string
+	AgentID    string
+	IssueID    string
+	Trigger    string
+	Status     string
+	Error      string
+	CreatedAt  time.Time
+	StartedAt  *time.Time
+	FinishedAt *time.Time
+}
+
+// RunLog is one entry of a run's execution log. Kind is "llm_request",
+// "llm_response", "tool_call", "tool_result" or "error"; Seq orders the
+// entries within a run starting at 1.
+type RunLog struct {
+	RunID     string
+	Seq       int
+	Kind      string
+	Content   string
+	CreatedAt time.Time
+}
+
 // TaskMapping links one tasks-artifact entry to the sub-issue created for
 // it. ArtifactID pins the tasks artifact version the mapping came from.
 type TaskMapping struct {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"specpowers/backend/internal/agent"
 	"specpowers/backend/internal/auth"
 	"specpowers/backend/internal/collab"
 	"specpowers/backend/internal/config"
@@ -41,10 +42,17 @@ type Server struct {
 	Handler  http.Handler
 	pool     *pgxpool.Pool
 	ownsPool bool
+	// stopWorker cancels the agent runtime queue loop; nil when no worker
+	// was started.
+	stopWorker context.CancelFunc
 }
 
-// Close releases the owned pool; an injected pool is left alone.
+// Close releases the owned pool and stops the agent runtime worker; an
+// injected pool is left alone.
 func (s *Server) Close() {
+	if s.stopWorker != nil {
+		s.stopWorker()
+	}
 	if s.ownsPool && s.pool != nil {
 		s.pool.Close()
 	}
@@ -84,6 +92,9 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	changes := postgres.NewChangeStore(pool)
 	artifacts := postgres.NewArtifactStore(pool)
 	taskMappings := postgres.NewTaskMappingStore(pool)
+	agents := postgres.NewAgentStore(pool)
+	runs := postgres.NewRunStore(pool)
+	runLogs := postgres.NewRunLogStore(pool)
 
 	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
 	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
@@ -139,14 +150,36 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	workflowHandler := workflow.NewHandler(workflowService, tokens)
 	skillHandler := skill.NewHandler(skillRegistry, tokens)
 
+	// Agent runtime: definitions, run queue, LLM tool-loop executor and the
+	// issue-service trigger that enqueues runs on assignment / status change.
+	agentSvc := agent.NewService(agents, users, skillRegistry)
+	executor := agent.NewExecutor(agent.ExecutorDeps{
+		Issues:   issues,
+		Comments: comments,
+		Metadata: metadata,
+		Projects: projects,
+		Client:   llmClient,
+		Skills:   skillRegistry,
+		WorkDir:  cfg.AgentWorkDir,
+		Logs:     runLogs,
+	})
+	queue := agent.NewQueue(runs, runLogs, agents, executor)
+	issueService = issueService.WithRunTrigger(agent.NewTrigger(agents, runs))
+	agentHandler := agent.NewHandler(agentSvc, queue, runs, runLogs, issues, tokens)
+	workerCtx, stopWorker := context.WithCancel(context.Background())
+	go queue.Loop(workerCtx)
+
 	return &Server{
 		Handler: httpapi.NewRouter(httpapi.Deps{
 			Auth:    authHandler.Routes(),
 			Project: projectHandler.Routes(),
 			Changes: workflowHandler.Routes(),
 			Skills:  skillHandler.Routes(),
+			Agents:  agentHandler.AgentRoutes(),
+			Runs:    agentHandler.RunRoutes(),
 		}),
-		pool:     pool,
-		ownsPool: ownsPool,
+		pool:       pool,
+		ownsPool:   ownsPool,
+		stopWorker: stopWorker,
 	}, nil
 }

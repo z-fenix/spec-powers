@@ -10,14 +10,31 @@ import (
 	"specpowers/backend/internal/store"
 )
 
+// RunTrigger is notified when an issue's assignment or status changes and
+// when a parent issue is woken by its children reaching terminal states.
+// The agent runtime implements it to enqueue runs.
+type RunTrigger interface {
+	OnIssueAssigned(ctx context.Context, i *domain.Issue) error
+	OnIssueStatusChanged(ctx context.Context, i *domain.Issue) error
+	OnParentWakeup(ctx context.Context, parent *domain.Issue) error
+}
+
 type Service struct {
 	issues   store.IssueStore
 	projects store.ProjectStore
 	users    store.UserStore
+	trigger  RunTrigger
 }
 
 func NewService(issues store.IssueStore, projects store.ProjectStore, users store.UserStore) *Service {
 	return &Service{issues: issues, projects: projects, users: users}
+}
+
+// WithRunTrigger installs the run trigger; it returns the service for
+// chaining.
+func (s *Service) WithRunTrigger(t RunTrigger) *Service {
+	s.trigger = t
+	return s
 }
 
 type CreateInput struct {
@@ -216,6 +233,11 @@ func (s *Service) UpdateIssue(ctx context.Context, userID, issueID string, in Up
 	if err != nil {
 		return nil, httpapi.ErrInternal("update issue failed")
 	}
+	if s.trigger != nil && in.AssigneeID != nil && *in.AssigneeID != "" && *in.AssigneeID != current.AssigneeID {
+		if err := s.trigger.OnIssueAssigned(ctx, saved); err != nil {
+			return nil, httpapi.ErrInternal("notify assignment failed")
+		}
+	}
 	return saved, nil
 }
 
@@ -308,6 +330,11 @@ func (s *Service) TransitionStatus(ctx context.Context, userID, issueID, to stri
 	if err := s.wakeParentIfChildrenTerminal(ctx, saved); err != nil {
 		return nil, err
 	}
+	if s.trigger != nil {
+		if err := s.trigger.OnIssueStatusChanged(ctx, saved); err != nil {
+			return nil, httpapi.ErrInternal("notify status change failed")
+		}
+	}
 	return saved, nil
 }
 
@@ -326,6 +353,15 @@ func (s *Service) wakeParentIfChildrenTerminal(ctx context.Context, child *domai
 	}
 	if err := s.issues.CreateIssueWakeup(ctx, child.ParentID, child.ID); err != nil {
 		return httpapi.ErrInternal("record parent wakeup failed")
+	}
+	if s.trigger != nil {
+		parent, err := s.issues.GetIssue(ctx, child.ParentID)
+		if err != nil {
+			return httpapi.ErrInternal("get parent issue failed")
+		}
+		if err := s.trigger.OnParentWakeup(ctx, parent); err != nil {
+			return httpapi.ErrInternal("notify parent wakeup failed")
+		}
 	}
 	return nil
 }

@@ -84,6 +84,27 @@ func TestLoadLLMOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadAgentDefaults(t *testing.T) {
+	cfg, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Load with empty env: %v", err)
+	}
+	if cfg.AgentWorkDir != "data/agent-work" {
+		t.Errorf("AgentWorkDir default = %q, want data/agent-work", cfg.AgentWorkDir)
+	}
+}
+
+func TestLoadAgentOverride(t *testing.T) {
+	env := map[string]string{"SP_AGENT_WORK_DIR": "/var/sp/agent-work"}
+	cfg, err := Load(func(k string) string { return env[k] })
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AgentWorkDir != "/var/sp/agent-work" {
+		t.Errorf("AgentWorkDir = %q, want /var/sp/agent-work", cfg.AgentWorkDir)
+	}
+}
+
 func TestLoadRejectsProductionWithoutSecret(t *testing.T) {
 	env := map[string]string{"SP_ENV": "production"}
 	_, err := Load(func(k string) string { return env[k] })

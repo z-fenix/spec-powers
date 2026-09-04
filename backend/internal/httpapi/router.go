@@ -29,6 +29,8 @@ type Deps struct {
 	Project http.Handler
 	Changes http.Handler
 	Skills  http.Handler
+	Agents  http.Handler
+	Runs    http.Handler
 }
 
 func NewRouter(deps Deps) http.Handler {
@@ -51,6 +53,12 @@ func NewRouter(deps Deps) http.Handler {
 		}
 		if deps.Skills != nil {
 			r.Mount("/skills", http.StripPrefix("/api/v1/skills", deps.Skills))
+		}
+		if deps.Agents != nil {
+			r.Mount("/agents", http.StripPrefix("/api/v1/agents", deps.Agents))
+		}
+		if deps.Runs != nil {
+			r.Mount("/runs", http.StripPrefix("/api/v1/runs", deps.Runs))
 		}
 		r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 			Error(w, ErrNotFound("route not found"))

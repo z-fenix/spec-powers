@@ -148,3 +148,28 @@ func TestRouterMountsSkills(t *testing.T) {
 		t.Error("skills handler not reached under /api/v1/skills")
 	}
 }
+
+func TestRouterMountsAgentsAndRuns(t *testing.T) {
+	agentsReached, runsReached := false, false
+	agentsStub := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		agentsReached = true
+	})
+	runsStub := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		runsReached = true
+	})
+	h := NewRouter(Deps{Agents: agentsStub, Runs: runsStub})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if !agentsReached {
+		t.Error("agents handler not reached under /api/v1/agents")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/runs/r1", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if !runsReached {
+		t.Error("runs handler not reached under /api/v1/runs")
+	}
+}

@@ -3,7 +3,7 @@
 从零实现的 Multica 类协作平台：issue 发布后由 AI/LLM 严格按 classic 流程拆分子任务，产物入库并与子任务关联。
 
 - 技术栈：Go + React + Vite + PostgreSQL
-- 服务端二进制：`spd`（命令行工具 `sp` 由后续 Stage 交付）
+- 服务端二进制：`spd`，命令行工具：`sp`
 
 ## 目录结构
 
@@ -37,6 +37,44 @@ cd frontend && npm install && npm run dev
 | `SP_JWT_SECRET` | dev 默认值 | JWT 签名密钥；`SP_ENV=production` 时必填 |
 | `SP_ENV` | `dev` | 运行环境 |
 | `SP_ATTACHMENT_DIR` | `data/attachments` | issue 附件的本地存储目录 |
+| `SP_LLM_API_KEY` / `SP_LLM_MODEL` | 未设置 | OpenAI 兼容接口的密钥与模型；两者都设置后 AI 拆分才启用 |
+| `SP_LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容接口地址 |
+| `SP_LLM_PROMPT_DIR` | 内置默认 | 提示词模板目录（`<kind>.md` 覆盖对应 phase） |
+
+## sp 命令行
+
+`sp` 是工作流命令的唯一入口，全部通过 REST API 对接服务端，产物直接入库：
+
+```bash
+cd backend && go build -o sp.exe ./cmd/sp   # 或 go run ./cmd/sp
+
+# 登录（token 存入 .specpower/session.json）
+sp login --server http://localhost:8080 --email me@example.com --password *** [--register]
+
+# 打开 change：issue 已拆分则绑定，否则触发 AI classic 拆分
+sp open --issue <issue-id>
+
+# 门禁：打印报告；无可推进且无可归档时以非零码退出
+sp guard [--change <change-id>]
+
+# 推进到下一 phase（写入 handoff 记录）
+sp handoff [--change <change-id>]
+
+# 记录命令检查：build 仅记录在 .specpower/state.json；
+# verify 同时生成 YAML 报告（exit 0 → result: pass）提交服务端
+sp state record-check <build|verify> --command "go test ./..." --exit-code 0
+
+# 提交 verify 报告（YAML，--file / --content / stdin）
+sp verify --file verify.yaml
+
+# 归档 change（门禁全过后，按父子对唤醒父 issue 负责人）
+sp archive [--change <change-id>]
+```
+
+- change 定位：`--change` 优先，否则使用 `.specpower/state.json` 里 `sp open` 绑定的 change。
+- 认证：`--token` > 环境变量 `SP_TOKEN` > `.specpower/session.json`；服务器地址同理（`--server` > `SP_SERVER` > session）。
+- 输出：默认人类可读，任意命令加 `--json` 输出结构化结果。
+- 退出码：`0` 成功；`1` 门禁未过或 API 错误；`2` 用法错误。
 
 ## 测试
 
@@ -47,6 +85,9 @@ cd backend && go test ./...
 # 后端集成测试（需要真实 PostgreSQL，如 compose 起的实例）
 docker compose up -d
 cd backend && SP_TEST_PG_DSN="postgres://specpowers:specpowers@localhost:5432/specpowers?sslmode=disable" go test ./...
+```
+
+集成测试（含 sp CLI 的集成测试：以 `server.Build` 起真实测试服务器，驱动 login → open → guard → verify → archive 全流程）由 `SP_TEST_PG_DSN` 守卫，未设置时自动跳过。
 
 # 前端测试与构建
 cd frontend && npm test -- --run && npm run build

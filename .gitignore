@@ -1,6 +1,7 @@
 .agent_context/
 .multica/
 .claude/
+.specpower/
 node_modules/
 dist/
 *.exe

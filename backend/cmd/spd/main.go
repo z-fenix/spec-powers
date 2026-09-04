@@ -10,15 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"specpowers/backend/internal/auth"
-	"specpowers/backend/internal/collab"
 	"specpowers/backend/internal/config"
-	"specpowers/backend/internal/httpapi"
-	"specpowers/backend/internal/issue"
-	"specpowers/backend/internal/llm"
-	"specpowers/backend/internal/project"
-	"specpowers/backend/internal/store/postgres"
-	"specpowers/backend/internal/workflow"
+	"specpowers/backend/internal/server"
 )
 
 func main() {
@@ -26,76 +19,21 @@ func main() {
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
+	if cfg.LLMAPIKey == "" || cfg.LLMModel == "" {
+		log.Printf("warning: SP_LLM_API_KEY/SP_LLM_MODEL not set; AI splitting is disabled")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	pool, err := postgres.New(ctx, cfg.DatabaseURL)
+	s, err := server.Build(ctx, cfg, server.Options{})
 	if err != nil {
-		log.Fatalf("database: %v", err)
+		log.Fatalf("%v", err)
 	}
-	defer pool.Close()
-
-	if err := postgres.Migrate(ctx, postgres.NewMigrationDB(pool), postgres.MigrationsFS); err != nil {
-		log.Fatalf("migrate: %v", err)
-	}
-
-	users := postgres.NewUserStore(pool)
-	workspaces := postgres.NewWorkspaceStore(pool)
-	members := postgres.NewMemberStore(pool)
-	projects := postgres.NewProjectStore(pool)
-	issues := postgres.NewIssueStore(pool)
-	comments := postgres.NewCommentStore(pool)
-	attachments := postgres.NewAttachmentStore(pool)
-	metadata := postgres.NewIssueMetadataStore(pool)
-	changes := postgres.NewChangeStore(pool)
-	artifacts := postgres.NewArtifactStore(pool)
-	taskMappings := postgres.NewTaskMappingStore(pool)
-
-	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
-	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
-	issueService := issue.NewService(issues, projects, users)
-	issueHandler := issue.NewHandler(issueService, tokens).WithCollab(
-		collab.NewHandler(
-			collab.NewService(issues, projects, comments, attachments, metadata, cfg.AttachmentDir),
-			tokens,
-		).Routes(),
-	)
-	projectHandler := project.NewHandler(
-		project.NewService(projects, users, members, workspaces),
-		tokens,
-		issueHandler.Routes(),
-	)
-	workflowService := workflow.NewService(changes, artifacts, taskMappings, issues, projects)
-	workflowService = workflowService.WithWaker(issues)
-	if cfg.LLMAPIKey != "" && cfg.LLMModel != "" {
-		promptTemplates, err := workflow.LoadTemplates(cfg.LLMPromptDir)
-		if err != nil {
-			log.Fatalf("prompt templates: %v", err)
-		}
-		splitter := workflow.NewSplitter(workflow.SplitterDeps{
-			Client:     llm.NewOpenAIClient(cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel),
-			Changes:    changes,
-			Artifacts:  artifacts,
-			Mappings:   taskMappings,
-			Issues:     issues,
-			Creator:    issueService,
-			Contexts:   projects,
-			Templates:  promptTemplates,
-			MaxRetries: cfg.LLMMaxRetries,
-		})
-		workflowService = workflowService.WithSplitter(splitter)
-	} else {
-		log.Printf("warning: SP_LLM_API_KEY/SP_LLM_MODEL not set; AI splitting is disabled")
-	}
-	workflowHandler := workflow.NewHandler(workflowService, tokens)
+	defer s.Close()
 
 	srv := &http.Server{
-		Addr: cfg.Addr,
-		Handler: httpapi.NewRouter(httpapi.Deps{
-			Auth:    authHandler.Routes(),
-			Project: projectHandler.Routes(),
-			Changes: workflowHandler.Routes(),
-		}),
+		Addr:              cfg.Addr,
+		Handler:           s.Handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

@@ -25,6 +25,7 @@
   --accent: oklch(0.967 0.001 286.375);
   --accent-foreground: oklch(0.21 0.006 285.885);
   --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(0.945 0.003 286.32);
   --input: oklch(0.92 0.004 286.32);
   --ring: oklch(0.705 0.015 286.067);
@@ -65,6 +66,7 @@
   --accent: oklch(0.274 0.006 286.033);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.21 0.006 285.885);
   --border: oklch(1 0 0 / 6%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.552 0.016 285.938);
@@ -82,6 +84,8 @@
 
 /* Role-named type scale (Multica packages/ui/styles/tokens.css) */
 :root {
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
   --text-micro: 11px;
   --lh-micro: 15px;
   --text-caption: 12px;
@@ -1311,13 +1315,13 @@ textarea::placeholder {
 /* ---------- inline forms & misc ---------- */
 
 .badge.label {
-  background: #ddf4ff;
-  border-color: #54aeff66;
-  color: #0969da;
+  background: color-mix(in oklab, var(--brand) 12%, transparent);
+  border-color: color-mix(in oklab, var(--brand) 28%, transparent);
+  color: var(--brand);
 }
 
 .due-date.overdue {
-  color: #cf222e;
+  color: var(--destructive);
   font-weight: 600;
 }
 
@@ -1478,7 +1482,7 @@ textarea::placeholder {
 .notification-bell span {
   margin-left: auto;
   background: var(--destructive);
-  color: #fff;
+  color: var(--destructive-foreground);
   border-radius: 999px;
   padding: 0 6px;
   font-size: var(--text-micro);
@@ -1524,23 +1528,32 @@ textarea::placeholder {
 
 .inbox-tabs [role='tab'] {
   padding: 4px 12px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--surface-border);
   border-radius: 999px;
-  background: #f6f8fa;
+  background: var(--surface);
+  color: var(--muted-foreground);
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
   cursor: pointer;
 }
 
+.inbox-tabs [role='tab']:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
 .inbox-tabs [aria-selected='true'] {
-  background: #0969da;
-  border-color: #0969da;
-  color: #fff;
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--brand-foreground);
   font-weight: 600;
 }
 
 .notification-time {
   font-weight: 400;
-  font-size: 12px;
-  color: #57606a;
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+  color: var(--muted-foreground);
 }
 
 /* ---- board artifact / run-log panel ---- */
@@ -1552,7 +1565,7 @@ textarea::placeholder {
 }
 
 .board-artifacts li {
-  border-top: 1px solid #d0d7de;
+  border-top: 1px solid var(--surface-border);
   padding: 6px 0;
 }
 
@@ -1560,9 +1573,10 @@ textarea::placeholder {
   list-style: none;
   margin: 6px 0 0;
   padding: 6px 8px;
-  background: #f6f8fa;
-  border-radius: 6px;
-  font-size: 12px;
+  background: var(--muted);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
 }
 
 .run-logs pre {
@@ -1585,29 +1599,31 @@ textarea::placeholder {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  font-size: var(--text-caption, 12px);
-  color: var(--muted-foreground, #57606a);
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+  color: var(--muted-foreground);
 }
 
 .usage-totals {
   margin: 4px 0 0;
-  color: var(--muted-foreground, #57606a);
-  font-size: var(--text-caption, 12px);
+  color: var(--muted-foreground);
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
 /* ---- mentions ---- */
 .mention {
   display: inline-block;
   padding: 0 4px;
   margin: 0 1px;
-  border-radius: 4px;
-  background: #ddf4ff;
-  color: #0969da;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--brand) 12%, transparent);
+  color: var(--brand);
   font-weight: 600;
   text-decoration: none;
 }
 
 a.mention:hover {
-  background: #0969da;
-  color: #fff;
+  background: var(--brand);
+  color: var(--brand-foreground);
 }
 
 .mention-input {
@@ -1624,10 +1640,10 @@ a.mention:hover {
   padding: 4px;
   list-style: none;
   min-width: 220px;
-  background: #fff;
-  border: 1px solid #d0d7de;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background: var(--surface-raised);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--menu-shadow);
 }
 
 .mention-option {
@@ -1637,29 +1653,32 @@ a.mention:hover {
   width: 100%;
   padding: 4px 8px;
   border: none;
+  border-radius: var(--radius-sm);
   background: none;
+  color: var(--foreground);
   text-align: left;
   cursor: pointer;
 }
 
 .mention-option.active,
 .mention-option:hover {
-  background: #0969da;
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 
 .mention-kind {
-  font-size: 11px;
+  font-size: var(--text-micro);
+  line-height: var(--lh-micro);
   padding: 0 4px;
-  border-radius: 3px;
-  background: #d0d7de;
-  color: #24292f;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .mention-option.active .mention-kind,
 .mention-option:hover .mention-kind {
-  background: #ffffffcc;
-  color: #0969da;
+  background: var(--surface-raised);
+  color: var(--brand);
 }
 
 .agent-list {
@@ -1668,7 +1687,7 @@ a.mention:hover {
 }
 
 .agent-list li {
-  border-top: 1px solid #d0d7de;
+  border-top: 1px solid var(--surface-border);
   padding: 8px 0;
   display: flex;
   align-items: center;
@@ -1681,7 +1700,7 @@ a.mention:hover {
 }
 
 .agent-description {
-  color: #57606a;
+  color: var(--muted-foreground);
 }
 
 .squad-create {

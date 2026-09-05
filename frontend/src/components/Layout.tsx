@@ -1,8 +1,24 @@
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useTheme } from '../lib/theme'
+import { listMembers } from '../api/workspace'
 import { NotificationBell } from './NotificationBell'
+import { CreateIssueDialog } from './CreateIssueDialog'
+
+function IconSquarePen() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d="M9.5 2.75h-5A1.75 1.75 0 0 0 2.75 4.5v8.75A1.75 1.75 0 0 0 4.5 15h8.75a1.75 1.75 0 0 0 1.75-1.75v-5M10.25 1.75l4 4-6.5 6.5H4.5V9.25l5.75-7.5Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
 
 function IconFolder() {
   return (
@@ -88,6 +104,36 @@ function IconAgent() {
   )
 }
 
+function IconChevronDown() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+      <path d="M2.5 4.5 6 8l3.5-3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function IconCheck() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path d="m2.5 7.5 3 3 6-7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function IconLogOut() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path
+        d="M5.25 12.25h-2A1.25 1.25 0 0 1 2 11V3a1.25 1.25 0 0 1 1.25-1.25h2M9.25 9.5 12.5 7 9.25 4.5M12.25 7h-7"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 function ThemeIcon({ resolved }: { resolved: 'light' | 'dark' }) {
   if (resolved === 'dark') {
     return (
@@ -120,60 +166,157 @@ const THEME_LABELS: Record<string, string> = {
   system: '跟随系统',
 }
 
+function useOutsideClose(ref: React.RefObject<HTMLElement | null>, open: boolean, onClose: () => void) {
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [ref, open, onClose])
+}
+
 export function Layout() {
   const { user, logout } = useAuth()
   const { theme, resolved, cycle } = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [workspaceName, setWorkspaceName] = useState('Spec Powers')
+  const menuRef = useRef<HTMLDivElement>(null)
 
-  // close the mobile sidebar on navigation
+  useOutsideClose(menuRef, menuOpen, () => setMenuOpen(false))
+
+  // close the mobile sidebar and the workspace menu on navigation
   useEffect(() => {
     setSidebarOpen(false)
+    setMenuOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    let cancelled = false
+    listMembers()
+      .then((res) => {
+        if (!cancelled && res.workspace?.name) setWorkspaceName(res.workspace.name)
+      })
+      .catch(() => {
+        // the fallback name is already in place
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const name = user?.display_name || user?.email || ''
   const initial = name ? name[0].toUpperCase() : '?'
+  const wsInitial = workspaceName ? workspaceName[0].toUpperCase() : 'S'
+
+  const onLogout = () => {
+    logout()
+    navigate('/login')
+  }
+
+  const navClass = ({ isActive }: { isActive: boolean }) => (isActive ? 'nav-item active' : 'nav-item')
 
   return (
     <div className={sidebarOpen ? 'shell sidebar-open' : 'shell'}>
       <aside className="sidebar">
         <div className="sidebar-inner">
           <div className="sidebar-header">
-            <div className="sidebar-workspace">
-              <span className="workspace-avatar">SP</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                Spec Powers
-              </span>
+            <div className="workspace-switcher" ref={menuRef}>
+              <button
+                type="button"
+                className="sidebar-workspace"
+                data-testid="workspace-switcher"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((v) => !v)}
+              >
+                <span className="workspace-avatar">{wsInitial}</span>
+                <span className="workspace-name">{workspaceName}</span>
+                <span className="workspace-chevron">
+                  <IconChevronDown />
+                </span>
+              </button>
+              {menuOpen && (
+                <div className="menu" role="menu" data-testid="workspace-menu">
+                  <div className="menu-user">
+                    <span className="user-avatar user-avatar-lg">{initial}</span>
+                    <div className="menu-user-meta">
+                      <p className="menu-user-name">{name}</p>
+                      {user?.email && <p className="menu-user-email">{user.email}</p>}
+                    </div>
+                  </div>
+                  <div className="menu-separator" />
+                  <p className="menu-label">工作空间</p>
+                  <button type="button" className="menu-item" role="menuitem" data-testid="menu-current-workspace">
+                    <span className="workspace-avatar">{wsInitial}</span>
+                    <span className="menu-item-label">{workspaceName}</span>
+                    <span className="menu-item-check">
+                      <IconCheck />
+                    </span>
+                  </button>
+                  <div className="menu-separator" />
+                  <button
+                    type="button"
+                    className="menu-item menu-item-destructive"
+                    role="menuitem"
+                    data-testid="menu-logout"
+                    onClick={onLogout}
+                  >
+                    <IconLogOut />
+                    <span className="menu-item-label">退出登录</span>
+                  </button>
+                </div>
+              )}
             </div>
+            <button
+              type="button"
+              className="nav-item"
+              data-testid="nav-new-task"
+              onClick={() => setCreateOpen(true)}
+            >
+              <IconSquarePen />
+              新建任务
+            </button>
           </div>
           <nav className="sidebar-nav">
+            <NotificationBell />
             <p className="nav-group-label">工作区</p>
-            <NavLink to="/" end className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
+            <NavLink to="/" end className={navClass}>
               <IconFolder />
               项目
             </NavLink>
-            <NavLink to="/agents" className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
+            <NavLink to="/autopilots" className={navClass}>
+              <IconAutopilot />
+              自动化
+            </NavLink>
+            <NavLink to="/agents" className={navClass}>
               <IconAgent />
-              Agents
+              智能体
             </NavLink>
-            <NavLink to="/squads" className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
+            <NavLink to="/squads" className={navClass}>
               <IconSquad />
-              小组
+              团队
             </NavLink>
-            <NavLink to="/settings" className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')} data-testid="nav-settings">
-              <IconGear />
-              设置
-            </NavLink>
-            <NotificationBell />
-            <p className="nav-group-label">自动化</p>
-            <NavLink to="/webhooks" className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
+            <p className="nav-group-label">配置</p>
+            <NavLink to="/webhooks" className={navClass}>
               <IconWebhook />
               Webhooks
             </NavLink>
-            <NavLink to="/autopilots" className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
-              <IconAutopilot />
-              Autopilots
+            <NavLink to="/settings" className={navClass} data-testid="nav-settings">
+              <IconGear />
+              设置
             </NavLink>
           </nav>
           <div className="sidebar-footer">
@@ -185,15 +328,6 @@ export function Layout() {
             >
               <ThemeIcon resolved={resolved} />
               {THEME_LABELS[theme] ?? theme}
-            </button>
-            <div className="sidebar-user">
-              <span className="user-avatar">{initial}</span>
-              <span className="sidebar-user-name" data-testid="current-user">
-                {name}
-              </span>
-            </div>
-            <button type="button" className="nav-item" onClick={() => { logout(); navigate('/login') }}>
-              退出
             </button>
           </div>
         </div>
@@ -221,6 +355,11 @@ export function Layout() {
         </div>
         <Outlet />
       </div>
+      <CreateIssueDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={(projectId, issueId) => navigate(`/projects/${projectId}/issues/${issueId}`)}
+      />
     </div>
   )
 }

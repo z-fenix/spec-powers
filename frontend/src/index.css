@@ -474,8 +474,30 @@ textarea::placeholder {
   font-size: var(--text-body);
   font-weight: 500;
   color: var(--sidebar-accent-foreground);
-  cursor: default;
+  cursor: pointer;
   text-align: left;
+}
+
+.sidebar-workspace:hover {
+  background: color-mix(in oklab, var(--sidebar-accent) 70%, transparent);
+}
+
+.workspace-switcher {
+  position: relative;
+  padding: 0 0 4px;
+}
+
+.workspace-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-chevron {
+  display: flex;
+  color: var(--muted-foreground);
 }
 
 .workspace-avatar {
@@ -515,7 +537,8 @@ textarea::placeholder {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 4px 8px;
+  height: 28px;
+  padding: 0 8px;
   border: none;
   border-radius: calc(var(--radius) * 0.8);
   background: transparent;
@@ -578,13 +601,115 @@ textarea::placeholder {
   font-weight: 600;
 }
 
-.sidebar-user-name {
+.user-avatar-lg {
+  width: 32px;
+  height: 32px;
   font-size: var(--text-body);
+}
+
+/* workspace-switcher dropdown — Multica dropdown-menu contract:
+   raised surface, menu shadow, accent hover rows, destructive variant */
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  min-width: 224px;
+  padding: 4px;
+  background: var(--surface-raised);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--menu-shadow);
+}
+
+.menu-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+}
+
+.menu-user-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.menu-user-name {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
   font-weight: 500;
-  color: var(--sidebar-accent-foreground);
+  color: var(--foreground);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.menu-user-email {
+  margin: 0;
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-label {
+  margin: 4px 8px 2px;
+  font-size: var(--text-caption);
+  line-height: var(--lh-caption);
+  color: var(--muted-foreground);
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 4px -4px;
+  background: var(--surface-border);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.menu-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-item-check {
+  display: flex;
+  color: var(--primary);
+}
+
+.menu-item-destructive {
+  color: var(--destructive);
+}
+
+.menu-item-destructive:hover {
+  background: color-mix(in oklab, var(--destructive) 10%, transparent);
+  color: var(--destructive);
 }
 
 /* mobile top bar + off-canvas sidebar */

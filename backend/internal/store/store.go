@@ -128,6 +128,26 @@ type AgentStore interface {
 	DeleteAgent(ctx context.Context, id string) error
 }
 
+// SquadStore manages squads and their rosters. AddSquadMember returns
+// ErrConflict on a duplicate membership; stores treat squads as
+// workspace-level (no project scoping).
+type SquadStore interface {
+	CreateSquad(ctx context.Context, s *domain.Squad) (*domain.Squad, error)
+	GetSquad(ctx context.Context, id string) (*domain.Squad, error)
+	ListSquads(ctx context.Context) ([]domain.Squad, error)
+	UpdateSquad(ctx context.Context, s *domain.Squad) (*domain.Squad, error)
+	DeleteSquad(ctx context.Context, id string) error
+	// SetSquadLeader pins the leader column; the caller owns roster
+	// consistency.
+	SetSquadLeader(ctx context.Context, squadID, leaderID string) (*domain.Squad, error)
+	AddSquadMember(ctx context.Context, squadID, userID string) error
+	RemoveSquadMember(ctx context.Context, squadID, userID string) error
+	ListSquadMembers(ctx context.Context, squadID string) ([]domain.SquadMember, error)
+	// ListSquadMemberDetails resolves the roster to display names and flags
+	// agent identities, ordered by joined_at then user_id.
+	ListSquadMemberDetails(ctx context.Context, squadID string) ([]domain.SquadMemberDetail, error)
+}
+
 // RunFilter narrows ListRuns. Empty fields mean "no filter".
 type RunFilter struct {
 	IssueID string

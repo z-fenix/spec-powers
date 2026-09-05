@@ -1654,3 +1654,61 @@ a.mention:hover {
 .agent-description {
   color: #57606a;
 }
+
+.squad-create {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.squad-create h3 {
+  width: 100%;
+  margin: 0 0 4px;
+}
+
+.squad-list {
+  list-style: none;
+  padding: 0;
+}
+
+.squad-list > li {
+  border-top: 1px solid var(--border);
+  padding: 12px 0;
+}
+
+.squad-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.squad-name {
+  font-weight: 600;
+}
+
+.squad-description {
+  color: var(--muted-foreground);
+}
+
+.squad-members {
+  list-style: none;
+  padding: 4px 0 0;
+  margin: 0;
+}
+
+.squad-members li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.squad-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}

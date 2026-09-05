@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../api/client'
+import { Modal } from '../components/Modal'
 import {
   createPropertyDefinition,
   deletePropertyDefinition,
@@ -8,7 +9,6 @@ import {
   PROPERTY_TYPES,
   type PropertyDefinition,
 } from '../api/properties'
-import { Modal } from '../components/Modal'
 import { ProjectUsagePanel } from '../components/Usage'
 import type { Project } from './ProjectsPage'
 
@@ -296,42 +296,6 @@ export function ProjectDetailPage() {
           description="把代码仓库或本地目录绑定到这个项目。"
           onClose={() => setShowResource(false)}
         >
-          <option value="github_repo">GitHub 仓库</option>
-          <option value="local_directory">本地目录</option>
-        </select>
-        <input
-          data-testid="resource-label"
-          placeholder="标签"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          required
-        />
-        <input
-          data-testid="resource-pointer"
-          placeholder={resourceType === 'github_repo' ? 'owner/repo' : '绝对路径'}
-          value={pointer}
-          onChange={(e) => setPointer(e.target.value)}
-          required
-        />
-        <button type="submit" data-testid="add-resource">
-          添加资源
-        </button>
-      </form>
-
-      <h3>项目上下文</h3>
-      <textarea
-        data-testid="context-input"
-        rows={6}
-        style={{ width: '100%' }}
-        value={context}
-        onChange={(e) => setContext(e.target.value)}
-      />
-      <button data-testid="save-context" onClick={onSaveContext}>
-        保存上下文
-      </button>
-
-      <PropertyDefinitionsPanel projectId={id} />
-    </section>
           <form onSubmit={onAddResource}>
             <label>
               类型
@@ -383,6 +347,8 @@ export function ProjectDetailPage() {
           </form>
         </Modal>
       )}
+
+      <PropertyDefinitionsPanel projectId={id} />
     </div>
   )
 }

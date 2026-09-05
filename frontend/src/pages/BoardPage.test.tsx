@@ -392,6 +392,8 @@ describe('BoardPage', () => {
     await screen.findByTestId('board')
 
     expect(screen.queryByTestId('filter-property')).not.toBeInTheDocument()
+  })
+
   it('searches issues by keyword', async () => {
     mocked.listIssues.mockResolvedValue([makeIssue({ id: 'a', title: 'card a' })])
     renderPage()

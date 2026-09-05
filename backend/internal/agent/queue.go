@@ -151,18 +151,33 @@ func (q *Queue) Loop(ctx context.Context) {
 // Trigger implements issue.RunTrigger: it enqueues a run whenever an issue
 // is assigned to an agent, its status changes while agent-assigned, or an
 // agent-assigned parent is woken by its children reaching terminal states.
-// Human assignees instead get a notification (assignment, wakeup) — runs are
-// agent-only work, notifications are user-facing.
+// Issues assigned to a squad route to the squad's leader instead: an agent
+// leader gets a run, a human leader gets a notification. Human assignees
+// likewise get notifications — runs are agent-only work.
 type Trigger struct {
 	agents   store.AgentStore
 	runs     store.RunStore
+	squads   SquadRouter
 	notifier notification.Sink
+}
+
+// SquadRouter resolves squad assignees to their leader without importing
+// the squad package.
+type SquadRouter interface {
+	GetSquad(ctx context.Context, id string) (*domain.Squad, error)
 }
 
 var _ issue.RunTrigger = (*Trigger)(nil)
 
 func NewTrigger(agents store.AgentStore, runs store.RunStore) *Trigger {
 	return &Trigger{agents: agents, runs: runs}
+}
+
+// WithSquadRouter enables routing of squad-assigned issues to the squad's
+// leader.
+func (t *Trigger) WithSquadRouter(r SquadRouter) *Trigger {
+	t.squads = r
+	return t
 }
 
 // WithNotifier attaches a best-effort notification sink used to inform human
@@ -189,7 +204,10 @@ func (t *Trigger) OnIssueAssigned(ctx context.Context, i *domain.Issue) error {
 	if t.isAgent(ctx, i.AssigneeID) {
 		return t.enqueue(ctx, i.ID, i.AssigneeID, "assigned")
 	}
-	t.notifyHuman(ctx, i, "assigned", "Issue assigned to you: "+i.Title)
+	if t.routeToLeader(ctx, i, "assigned", "Issue assigned to your squad: "+i.Title) {
+		return nil
+	}
+	t.notifyUser(ctx, i.AssigneeID, i, "assigned", "Issue assigned to you: "+i.Title)
 	return nil
 }
 
@@ -204,18 +222,39 @@ func (t *Trigger) OnParentWakeup(ctx context.Context, parent *domain.Issue) erro
 	if t.isAgent(ctx, parent.AssigneeID) {
 		return t.enqueue(ctx, parent.ID, parent.AssigneeID, "wakeup")
 	}
-	t.notifyHuman(ctx, parent, "wakeup", "Sub-issues finished, awaiting acceptance: "+parent.Title)
+	if t.routeToLeader(ctx, parent, "wakeup", "Sub-issues finished, awaiting acceptance: "+parent.Title) {
+		return nil
+	}
+	t.notifyUser(ctx, parent.AssigneeID, parent, "wakeup", "Sub-issues finished, awaiting acceptance: "+parent.Title)
 	return nil
 }
 
-// notifyHuman records a notification for the issue's (non-agent) assignee;
-// it is best-effort and stays silent without an assignee.
-func (t *Trigger) notifyHuman(ctx context.Context, i *domain.Issue, kind, title string) {
-	if t.notifier == nil || i.AssigneeID == "" {
+// routeToLeader hands a squad-assigned issue to the squad's leader: an agent
+// leader gets a run enqueued, a human leader a notification. It reports
+// whether the assignee was a squad (handled or not).
+func (t *Trigger) routeToLeader(ctx context.Context, i *domain.Issue, kind, title string) bool {
+	if t.squads == nil || i.AssigneeID == "" {
+		return false
+	}
+	sq, err := t.squads.GetSquad(ctx, i.AssigneeID)
+	if err != nil {
+		return false
+	}
+	if t.isAgent(ctx, sq.LeaderID) {
+		return t.enqueue(ctx, i.ID, sq.LeaderID, kind) == nil
+	}
+	t.notifyUser(ctx, sq.LeaderID, i, kind, title)
+	return true
+}
+
+// notifyUser records a notification for the given user; it is best-effort
+// and stays silent without a user id.
+func (t *Trigger) notifyUser(ctx context.Context, userID string, i *domain.Issue, kind, title string) {
+	if t.notifier == nil || userID == "" {
 		return
 	}
 	t.notifier.Notify(ctx, notification.NotifyInput{
-		UserID:    i.AssigneeID,
+		UserID:    userID,
 		Kind:      kind,
 		Title:     title,
 		IssueID:   i.ID,

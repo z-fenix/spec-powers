@@ -13,9 +13,19 @@ export interface Notification {
   created_at: string
 }
 
-export async function listNotifications(unreadOnly = false): Promise<{ notifications: Notification[]; unread: number }> {
-  const path = unreadOnly ? '/notifications?unread=true' : '/notifications'
-  return apiFetch<{ notifications: Notification[]; unread: number }>(path)
+export interface ListOptions {
+  unread?: boolean
+  kind?: string
+}
+
+export async function listNotifications(opts: ListOptions = {}): Promise<{ notifications: Notification[]; unread: number }> {
+  const params = new URLSearchParams()
+  if (opts.unread) params.set('unread', 'true')
+  if (opts.kind) params.set('kind', opts.kind)
+  const qs = params.toString()
+  return apiFetch<{ notifications: Notification[]; unread: number }>(
+    qs ? `/notifications?${qs}` : '/notifications',
+  )
 }
 
 export async function markNotificationRead(id: string): Promise<Notification> {

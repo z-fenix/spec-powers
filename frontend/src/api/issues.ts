@@ -79,6 +79,17 @@ export interface IssueFilter {
   status?: string
   stage?: number
   parent?: string
+  query?: string
+}
+
+export interface IssueEvent {
+  id: string
+  issue_id: string
+  actor_id: string
+  field: string
+  old_value: string
+  new_value: string
+  created_at: string
 }
 
 function issuePath(projectId: string, issueId?: string): string {
@@ -92,6 +103,7 @@ function withQuery(path: string, filter?: IssueFilter): string {
   if (filter.status) params.set('status', filter.status)
   if (filter.stage !== undefined) params.set('stage', String(filter.stage))
   if (filter.parent) params.set('parent', filter.parent)
+  if (filter.query) params.set('q', filter.query)
   const qs = params.toString()
   return qs ? `${path}?${qs}` : path
 }
@@ -142,6 +154,16 @@ export async function transitionIssue(
 export async function listChildren(projectId: string, issueId: string): Promise<Issue[]> {
   const res = await apiFetch<{ issues: Issue[] }>(`${issuePath(projectId, issueId)}/children`)
   return res.issues ?? []
+}
+
+export async function listIssueEvents(
+  projectId: string,
+  issueId: string,
+): Promise<IssueEvent[]> {
+  const res = await apiFetch<{ events: IssueEvent[] }>(
+    `${issuePath(projectId, issueId)}/events`,
+  )
+  return res.events ?? []
 }
 
 export async function listComments(projectId: string, issueId: string): Promise<IssueComment[]> {

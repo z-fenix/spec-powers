@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { ProjectsPage } from './ProjectsPage'
@@ -59,10 +59,11 @@ describe('ProjectsPage', () => {
       .mockResolvedValueOnce({ projects: [created] })
     renderPage()
 
+    await userEvent.click(await screen.findByTestId('create-project'))
     await screen.findByTestId('project-name')
     await userEvent.type(screen.getByTestId('project-name'), 'Gamma')
     await userEvent.type(screen.getByTestId('project-description'), 'new one')
-    await userEvent.click(screen.getByTestId('create-project'))
+    await userEvent.click(screen.getByTestId('confirm-create-project'))
 
     expect(mockedFetch).toHaveBeenCalledWith(
       '/projects',
@@ -85,6 +86,24 @@ describe('ProjectsPage', () => {
       expect.objectContaining({ method: 'POST', body: { archived: true } }),
     )
     expect(await screen.findByText('已归档')).toBeInTheDocument()
+  })
+
+  it('renders archived projects after active ones', async () => {
+    mockedFetch.mockResolvedValueOnce({
+      projects: [
+        { ...project, id: 'p2', name: 'Oldie', archived: true },
+        project,
+      ],
+    })
+    renderPage()
+
+    await screen.findByText('Alpha')
+    const list = screen.getByText('Alpha').closest('ul') as HTMLElement
+    const names = within(list)
+      .getAllByRole('listitem')
+      .map((li) => li.textContent)
+    expect(names[0]).toContain('Alpha')
+    expect(names[1]).toContain('Oldie')
   })
 
   it('shows the error envelope message when loading fails', async () => {

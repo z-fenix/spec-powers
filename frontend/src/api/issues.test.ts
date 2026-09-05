@@ -8,6 +8,7 @@ import {
   transitionIssue,
   listChildren,
   listComments,
+  listIssueEvents,
   addComment,
   listAttachments,
   uploadAttachment,
@@ -111,6 +112,31 @@ describe('issues api', () => {
       method: 'POST',
       body: { status: 'in_progress' },
     })
+  })
+
+  it('lists issues with the search keyword as the q param', async () => {
+    mockedFetch.mockResolvedValueOnce({ issues: [issue] })
+    const res = await listIssues('p1', { query: 'parser' })
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/p1/issues?q=parser')
+    expect(res).toEqual([issue])
+  })
+
+  it('lists issue events', async () => {
+    const event = {
+      id: 'e1',
+      issue_id: 'i1',
+      actor_id: 'u1',
+      field: 'status',
+      old_value: 'todo',
+      new_value: 'in_progress',
+      created_at: '2026-09-05T00:00:00Z',
+    }
+    mockedFetch.mockResolvedValueOnce({ events: [event] })
+    const res = await listIssueEvents('p1', 'i1')
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/p1/issues/i1/events')
+    expect(res).toEqual([event])
   })
 
   it('lists children', async () => {

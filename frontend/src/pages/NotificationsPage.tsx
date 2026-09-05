@@ -7,11 +7,19 @@ import {
   type Notification,
 } from '../api/notifications'
 
+const POLL_MS = 30_000
+
 const KIND_LABELS: Record<string, string> = {
   comment: '评论',
+  assigned: '指派',
+  mention: '提及',
+  due: '截止日',
   run_finished: '运行完成',
   phase_advanced: '阶段推进',
+  wakeup: '子任务唤醒',
 }
+
+const KIND_FILTERS: string[] = ['', 'comment', 'assigned', 'mention', 'due', 'run_finished', 'phase_advanced', 'wakeup']
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString()
@@ -19,12 +27,13 @@ function formatTime(iso: string): string {
 
 export function NotificationsPage() {
   const [tab, setTab] = useState<'all' | 'unread'>('all')
+  const [kind, setKind] = useState('')
   const [notifications, setNotifications] = useState<Notification[] | null>(null)
   const [unread, setUnread] = useState(0)
   const navigate = useNavigate()
 
   const refresh = useCallback(() => {
-    listNotifications(tab === 'unread')
+    listNotifications({ unread: tab === 'unread', kind: kind || undefined })
       .then((res) => {
         setNotifications(res.notifications)
         setUnread(res.unread)
@@ -32,11 +41,18 @@ export function NotificationsPage() {
       .catch(() => {
         setNotifications([])
       })
-  }, [tab])
+  }, [tab, kind])
 
   useEffect(() => {
     setNotifications(null)
     refresh()
+  }, [refresh])
+
+  // Polling refresh: the list and the unread badge track new notifications
+  // without user interaction.
+  useEffect(() => {
+    const timer = setInterval(refresh, POLL_MS)
+    return () => clearInterval(timer)
   }, [refresh])
 
   const onMarkAllRead = async () => {
@@ -87,6 +103,19 @@ export function NotificationsPage() {
         >
           未读
         </button>
+      </div>
+      <div className="kind-filters" role="group" aria-label="按类型筛选">
+        {KIND_FILTERS.map((k) => (
+          <button
+            key={k || 'all'}
+            role="tab"
+            aria-selected={kind === k}
+            data-testid={k ? `kind-${k}` : 'kind-all'}
+            onClick={() => setKind(k)}
+          >
+            {k ? (KIND_LABELS[k] ?? k) : '全部类型'}
+          </button>
+        ))}
       </div>
       <button data-testid="mark-all-read" onClick={onMarkAllRead}>
         全部已读

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { BoardPage } from './BoardPage'
@@ -13,6 +13,7 @@ vi.mock('../api/issues', async (importOriginal) => {
     listIssues: vi.fn(),
     createIssue: vi.fn(),
     transitionIssue: vi.fn(),
+    updateIssue: vi.fn(),
   }
 })
 
@@ -106,6 +107,15 @@ function makeIssue(overrides: Partial<Issue>): Issue {
     position: 0,
     created_by: 'u1',
     ...overrides,
+  }
+}
+
+function dragProps(id: string) {
+  return {
+    dataTransfer: {
+      getData: () => id,
+      setData: vi.fn(),
+    } as unknown as DataTransfer,
   }
 }
 
@@ -216,6 +226,60 @@ describe('BoardPage', () => {
     expect(mocked.transitionIssue).toHaveBeenCalledWith('p1', 'a', 'in_progress')
   })
 
+  it('flows an issue status when its card is dropped in another column', async () => {
+    mocked.listIssues.mockResolvedValue([makeIssue({ id: 'a', title: 'card a', status: 'todo' })])
+    mocked.transitionIssue.mockResolvedValue(makeIssue({ id: 'a', status: 'in_progress' }))
+    renderPage()
+
+    const card = await screen.findByTestId('card-a')
+    fireEvent.dragStart(card, dragProps('a'))
+    fireEvent.drop(screen.getByTestId('column-in_progress'), dragProps('a'))
+
+    expect(mocked.transitionIssue).toHaveBeenCalledWith('p1', 'a', 'in_progress')
+  })
+
+  it('reorders positions when a card is dropped on another card in the same column', async () => {
+    mocked.listIssues.mockResolvedValue([
+      makeIssue({ id: 'a', title: 'A', status: 'todo', position: 0 }),
+      makeIssue({ id: 'b', title: 'B', status: 'todo', position: 1 }),
+      makeIssue({ id: 'c', title: 'C', status: 'todo', position: 2 }),
+    ])
+    mocked.updateIssue.mockImplementation((_pid, issueId, patch) =>
+      Promise.resolve(makeIssue({ id: issueId, position: patch.position ?? 0 })),
+    )
+    renderPage()
+
+    await screen.findByTestId('card-a')
+    fireEvent.dragStart(screen.getByTestId('card-a'), dragProps('a'))
+    fireEvent.drop(screen.getByTestId('card-c'), dragProps('a'))
+
+    expect(mocked.updateIssue).toHaveBeenCalledWith('p1', 'b', { position: 0 })
+    expect(mocked.updateIssue).toHaveBeenCalledWith('p1', 'c', { position: 1 })
+    expect(mocked.updateIssue).toHaveBeenCalledWith('p1', 'a', { position: 2 })
+
+    const todoColumn = screen.getByTestId('column-todo')
+    const order = within(todoColumn)
+      .getAllByTestId(/^card-/)
+      .map((el) => el.dataset.testid)
+    expect(order).toEqual(['card-b', 'card-c', 'card-a'])
+
+    await vi.waitFor(() => {
+      expect(mocked.listIssues).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('does not touch positions when a card is dropped back on itself', async () => {
+    mocked.listIssues.mockResolvedValue([makeIssue({ id: 'a', title: 'A', status: 'todo' })])
+    renderPage()
+
+    const card = await screen.findByTestId('card-a')
+    fireEvent.dragStart(card, dragProps('a'))
+    fireEvent.drop(card, dragProps('a'))
+
+    expect(mocked.updateIssue).not.toHaveBeenCalled()
+    expect(mocked.transitionIssue).not.toHaveBeenCalled()
+  })
+
   it('shows the error message when loading fails', async () => {
     mocked.listIssues.mockRejectedValue(new Error('加载失败'))
     renderPage()
@@ -253,5 +317,26 @@ describe('BoardPage', () => {
     await userEvent.click(await screen.findByTestId('toggle-artifacts-a'))
 
     expect(await screen.findByTestId('artifacts-empty-a')).toBeInTheDocument()
+  })
+
+  it('searches issues by keyword', async () => {
+    mocked.listIssues.mockResolvedValue([makeIssue({ id: 'a', title: 'card a' })])
+    renderPage()
+
+    await userEvent.type(await screen.findByTestId('search-issues'), 'parser')
+    await userEvent.click(screen.getByTestId('search-submit'))
+
+    expect(mocked.listIssues).toHaveBeenLastCalledWith('p1', { query: 'parser' })
+  })
+
+  it('combines search with the status filter', async () => {
+    mocked.listIssues.mockResolvedValue([])
+    renderPage()
+
+    await userEvent.type(await screen.findByTestId('search-issues'), 'parser')
+    await userEvent.click(screen.getByTestId('search-submit'))
+    await userEvent.selectOptions(screen.getByTestId('filter-status'), 'todo')
+
+    expect(mocked.listIssues).toHaveBeenLastCalledWith('p1', { status: 'todo', query: 'parser' })
   })
 })

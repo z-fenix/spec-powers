@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"specpowers/backend/internal/domain"
+	"specpowers/backend/internal/llm"
 	"specpowers/backend/internal/skill"
 )
 
@@ -85,7 +86,7 @@ func flowExecutor(t *testing.T, client llmClient, flow *fakeFlow, issue *domain.
 
 // llmClient is the local alias for the LLM interface used by test helpers.
 type llmClient = interface {
-	Complete(ctx context.Context, system, user string) (string, error)
+	Complete(ctx context.Context, system, user string) (llm.Completion, error)
 }
 
 // ---- tests ----

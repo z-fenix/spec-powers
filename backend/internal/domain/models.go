@@ -236,6 +236,32 @@ type Run struct {
 	FinishedAt *time.Time
 }
 
+// RunUsage records one LLM completion's token consumption for a run: one row
+// per completion, recorded as the executor consumes it so usage survives a
+// run that later fails.
+type RunUsage struct {
+	RunID            string
+	PromptTokens     int64
+	CompletionTokens int64
+	CreatedAt        time.Time
+}
+
+// UsageTotals aggregates LLM token consumption across completions. Calls is
+// the number of recorded completions.
+type UsageTotals struct {
+	Calls            int
+	PromptTokens     int64
+	CompletionTokens int64
+}
+
+// IssueUsage is one issue's aggregated token usage; Title is the issue's
+// title so project-level listings can be rendered without extra lookups.
+type IssueUsage struct {
+	IssueID string
+	Title   string
+	UsageTotals
+}
+
 // RunLog is one entry of a run's execution log. Kind is "llm_request",
 // "llm_response", "tool_call", "tool_result" or "error"; Seq orders the
 // entries within a run starting at 1.

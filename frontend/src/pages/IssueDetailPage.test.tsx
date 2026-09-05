@@ -5,8 +5,17 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { IssueDetailPage } from './IssueDetailPage'
 import * as api from '../api/issues'
 import * as workflowApi from '../api/workflow'
+import * as runsApi from '../api/runs'
 import type { Issue } from '../api/issues'
 import { ApiError } from '../api/client'
+
+vi.mock('../api/runs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/runs')>()
+  return {
+    ...actual,
+    getIssueUsage: vi.fn(),
+  }
+})
 
 vi.mock('../api/workflow', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/workflow')>()
@@ -89,6 +98,11 @@ beforeEach(() => {
   vi.mocked(workflowApi.getChangeByIssue).mockRejectedValue(
     new ApiError(404, 'not_found', 'no change'),
   )
+  vi.mocked(runsApi.getIssueUsage).mockResolvedValue({
+    calls: 0,
+    prompt_tokens: 0,
+    completion_tokens: 0,
+  })
   mocked.getIssue.mockResolvedValue(issue)
   mocked.listChildren.mockResolvedValue([])
   mocked.listComments.mockResolvedValue([])
@@ -109,6 +123,26 @@ describe('IssueDetailPage', () => {
     expect(screen.getByText('2026-09-10')).toBeInTheDocument()
   })
 
+  it('shows the aggregated LLM usage', async () => {
+    vi.mocked(runsApi.getIssueUsage).mockResolvedValue({
+      calls: 2,
+      prompt_tokens: 1234,
+      completion_tokens: 567,
+    })
+    renderPage()
+
+    const panel = await screen.findByTestId('issue-usage')
+    expect(within(panel).getByTestId('usage-calls')).toHaveTextContent('2')
+    expect(within(panel).getByTestId('usage-prompt')).toHaveTextContent('1,234')
+    expect(within(panel).getByTestId('usage-completion')).toHaveTextContent('567')
+    expect(runsApi.getIssueUsage).toHaveBeenCalledWith('i1')
+  })
+
+  it('renders zero usage without recorded runs', async () => {
+    renderPage()
+
+    const panel = await screen.findByTestId('issue-usage')
+    expect(within(panel).getByTestId('usage-calls')).toHaveTextContent('0')
   it('renders the change timeline', async () => {
     mocked.listIssueEvents.mockResolvedValue([
       {

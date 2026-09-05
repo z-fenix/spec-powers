@@ -35,6 +35,7 @@ import {
 import { StatusIcon } from '../components/StatusIcon'
 import { WorkflowProgress } from '../components/WorkflowProgress'
 import { ArtifactViewer } from '../components/ArtifactViewer'
+import { IssueUsagePanel } from '../components/Usage'
 import { MentionText } from '../components/MentionText'
 import { MentionInput, type MentionCandidate } from '../components/MentionInput'
 import { renderMarkdown } from '../lib/markdown'
@@ -691,6 +692,10 @@ export function IssueDetailPage() {
             <div className="detail-section">
               <WorkflowProgress issueId={issueId} />
               <ArtifactViewer issueId={issueId} />
+            </div>
+
+            <div className="detail-section">
+              <IssueUsagePanel issueId={issueId} />
             </div>
 
             <div className="detail-section">

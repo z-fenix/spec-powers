@@ -186,6 +186,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 		Skills:      skillRegistry,
 		WorkDir:     cfg.AgentWorkDir,
 		Logs:        runLogs,
+		Usage:       runs,
 		Flow:        agent.NewWorkflowFlow(workflowService),
 		MentionHook: mentionTrigger.OnComment,
 	})

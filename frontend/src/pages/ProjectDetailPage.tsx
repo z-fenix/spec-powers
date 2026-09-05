@@ -9,6 +9,7 @@ import {
   type PropertyDefinition,
 } from '../api/properties'
 import { Modal } from '../components/Modal'
+import { ProjectUsagePanel } from '../components/Usage'
 import type { Project } from './ProjectsPage'
 
 interface Resource {
@@ -269,6 +270,8 @@ export function ProjectDetailPage() {
               ))}
             </ul>
           </div>
+
+          <ProjectUsagePanel projectId={id} />
 
           <div className="detail-section">
             <h3 className="section-title">项目上下文</h3>

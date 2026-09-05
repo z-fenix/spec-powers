@@ -318,4 +318,25 @@ describe('BoardPage', () => {
 
     expect(await screen.findByTestId('artifacts-empty-a')).toBeInTheDocument()
   })
+
+  it('searches issues by keyword', async () => {
+    mocked.listIssues.mockResolvedValue([makeIssue({ id: 'a', title: 'card a' })])
+    renderPage()
+
+    await userEvent.type(await screen.findByTestId('search-issues'), 'parser')
+    await userEvent.click(screen.getByTestId('search-submit'))
+
+    expect(mocked.listIssues).toHaveBeenLastCalledWith('p1', { query: 'parser' })
+  })
+
+  it('combines search with the status filter', async () => {
+    mocked.listIssues.mockResolvedValue([])
+    renderPage()
+
+    await userEvent.type(await screen.findByTestId('search-issues'), 'parser')
+    await userEvent.click(screen.getByTestId('search-submit'))
+    await userEvent.selectOptions(screen.getByTestId('filter-status'), 'todo')
+
+    expect(mocked.listIssues).toHaveBeenLastCalledWith('p1', { status: 'todo', query: 'parser' })
+  })
 })

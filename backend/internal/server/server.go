@@ -98,12 +98,13 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	agents := postgres.NewAgentStore(pool)
 	runs := postgres.NewRunStore(pool)
 	runLogs := postgres.NewRunLogStore(pool)
+	issueEvents := postgres.NewIssueEventStore(pool)
 
 	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
 	notificationStore := postgres.NewNotificationStore(pool)
 	notificationSvc := notification.NewService(notificationStore)
 	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
-	issueService := issue.NewService(issues, projects, users)
+	issueService := issue.NewService(issues, projects, users).WithEventStore(issueEvents)
 	// Mention auto-claim: comments mentioning an agent enqueue its run.
 	mentionTrigger := agent.NewMentionTrigger(agents, runs)
 	collabSvc := collab.NewService(issues, projects, comments, attachments, metadata, cfg.AttachmentDir).

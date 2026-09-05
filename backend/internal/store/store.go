@@ -52,11 +52,13 @@ type ProjectStore interface {
 
 // IssueFilter narrows ListIssues. ParentID nil means "no filter"; a pointer
 // to "" selects root issues only. Empty Status means all statuses; nil Stage
-// means all stages.
+// means all stages. Non-empty Query does a case-insensitive keyword match on
+// title, description and comment content.
 type IssueFilter struct {
 	ParentID *string
 	Status   string
 	Stage    *int
+	Query    string
 }
 
 type IssueStore interface {
@@ -72,6 +74,13 @@ type IssueStore interface {
 	// terminal state; repeats for the same pair are idempotent.
 	CreateIssueWakeup(ctx context.Context, issueID, childIssueID string) error
 	ListIssueWakeups(ctx context.Context, issueID string) ([]domain.IssueWakeup, error)
+}
+
+// IssueEventStore records and lists an issue's timeline events. Events are
+// append-only; ListIssueEvents returns them oldest first.
+type IssueEventStore interface {
+	CreateIssueEvent(ctx context.Context, e *domain.IssueEvent) (*domain.IssueEvent, error)
+	ListIssueEvents(ctx context.Context, issueID string) ([]domain.IssueEvent, error)
 }
 
 type CommentStore interface {

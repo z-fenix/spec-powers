@@ -82,6 +82,19 @@ type Issue struct {
 	UpdatedAt   time.Time
 }
 
+// IssueEvent is one timeline entry of an issue: a field (or status/assignee)
+// change. Field "created" marks the issue's creation. ActorID is the user who
+// made the change; empty values mean "unset" (e.g. unassigned).
+type IssueEvent struct {
+	ID        string
+	IssueID   string
+	ActorID   string
+	Field     string
+	OldValue  string
+	NewValue  string
+	CreatedAt time.Time
+}
+
 // IssueWakeup records that a parent issue's owner should be woken because
 // every child issue reached a terminal state. Consumed by the agent runtime.
 type IssueWakeup struct {

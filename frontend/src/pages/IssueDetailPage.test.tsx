@@ -5,8 +5,17 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { IssueDetailPage } from './IssueDetailPage'
 import * as api from '../api/issues'
 import * as workflowApi from '../api/workflow'
+import * as runsApi from '../api/runs'
 import type { Issue } from '../api/issues'
 import { ApiError } from '../api/client'
+
+vi.mock('../api/runs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/runs')>()
+  return {
+    ...actual,
+    listRuns: vi.fn(),
+  }
+})
 
 vi.mock('../api/workflow', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/workflow')>()
@@ -76,6 +85,7 @@ beforeEach(() => {
   vi.mocked(workflowApi.getChangeByIssue).mockRejectedValue(
     new ApiError(404, 'not_found', 'no change'),
   )
+  vi.mocked(runsApi.listRuns).mockResolvedValue([])
   mocked.getIssue.mockResolvedValue(issue)
   mocked.listChildren.mockResolvedValue([])
   mocked.listComments.mockResolvedValue([])

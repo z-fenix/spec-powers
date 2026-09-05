@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthContext'
 import { Layout } from './components/Layout'
 import { RequireAuth } from './components/RequireAuth'
+import { AgentsPage } from './pages/AgentsPage'
 import { BoardPage } from './pages/BoardPage'
 import { IssueDetailPage } from './pages/IssueDetailPage'
 import { LoginPage } from './pages/LoginPage'
@@ -17,6 +18,7 @@ export default function App() {
         <Route element={<RequireAuth />}>
           <Route element={<Layout />}>
             <Route path="/" element={<ProjectsPage />} />
+            <Route path="/agents" element={<AgentsPage />} />
             <Route path="/projects/:id" element={<ProjectDetailPage />} />
             <Route path="/projects/:id/board" element={<BoardPage />} />
             <Route path="/projects/:id/issues/:issueId" element={<IssueDetailPage />} />

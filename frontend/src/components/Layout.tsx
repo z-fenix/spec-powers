@@ -1,4 +1,4 @@
-import { Outlet, useNavigate } from 'react-router-dom'
+import { Link, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { NotificationBell } from './NotificationBell'
 
@@ -10,6 +10,10 @@ export function Layout() {
     <div className="app-shell">
       <header className="app-header">
         <span className="app-title">Spec Powers</span>
+        <nav className="app-nav">
+          <Link to="/">项目</Link>
+          <Link to="/agents">Agents</Link>
+        </nav>
         <div className="app-user">
           <NotificationBell />
           {user && <span data-testid="current-user">{user.display_name || user.email}</span>}

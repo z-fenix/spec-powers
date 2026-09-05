@@ -22,6 +22,7 @@ import { ApiError } from '../api/client'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
 import { WorkflowProgress } from '../components/WorkflowProgress'
 import { ArtifactViewer } from '../components/ArtifactViewer'
+import { renderMarkdown } from '../lib/markdown'
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError || err instanceof Error ? err.message : fallback
@@ -87,13 +88,19 @@ function CommentThread({
     <div className="comment-thread" data-testid={`thread-${comment.id}`}>
       <div className="comment">
         <span className="comment-author">{comment.author_id}</span>
-        <span className="comment-content">{comment.content}</span>
+        <div
+          className="comment-content markdown-body"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(comment.content) }}
+        />
       </div>
       <div className="comment-replies">
         {replies.map((r) => (
           <div key={r.id} className="comment reply" data-testid={`reply-${r.id}`}>
             <span className="comment-author">{r.author_id}</span>
-            <span className="comment-content">{r.content}</span>
+            <div
+              className="comment-content markdown-body"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(r.content) }}
+            />
           </div>
         ))}
       </div>

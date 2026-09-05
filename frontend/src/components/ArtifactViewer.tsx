@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 import { getChangeByIssue, listArtifacts, listArtifactVersions, type Artifact } from '../api/workflow'
+import { renderMarkdown } from '../lib/markdown'
 
 const KIND_LABELS: Record<string, string> = {
   proposal: '提案',
@@ -12,10 +11,6 @@ const KIND_LABELS: Record<string, string> = {
 }
 
 const KIND_ORDER = ['proposal', 'specs', 'design', 'tasks', 'verify']
-
-function renderMarkdown(content: string): string {
-  return DOMPurify.sanitize(marked.parse(content, { async: false }) as string)
-}
 
 export function ArtifactViewer({ issueId }: { issueId: string }) {
   const [changeId, setChangeId] = useState<string | null>(null)

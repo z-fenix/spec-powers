@@ -153,6 +153,58 @@ describe('IssueDetailPage', () => {
     expect(await within(thread).findByText('my reply')).toBeInTheDocument()
   })
 
+  it('renders comment content as markdown', async () => {
+    const cm1 = {
+      id: 'cm1',
+      issue_id: 'i1',
+      parent_id: '',
+      author_id: 'u2',
+      content: '# 标题\n\n**加粗** 内容',
+      created_at: '',
+    }
+    mocked.listComments.mockResolvedValueOnce([cm1])
+    renderPage()
+
+    const thread = await screen.findByTestId('thread-cm1')
+    expect(within(thread).getByRole('heading', { level: 1, name: '标题' })).toBeInTheDocument()
+    expect(within(thread).getByText('加粗', { exact: false })).toBeInTheDocument()
+  })
+
+  it('sanitizes script tags in comment content', async () => {
+    const cm1 = {
+      id: 'cm1',
+      issue_id: 'i1',
+      parent_id: '',
+      author_id: 'u2',
+      content: '安全内容<script>alert(1)</script>',
+      created_at: '',
+    }
+    mocked.listComments.mockResolvedValueOnce([cm1])
+    const { container } = renderPage()
+
+    const thread = await screen.findByTestId('thread-cm1')
+    expect(within(thread).getByText('安全内容')).toBeInTheDocument()
+    expect(container.querySelector('script')).toBeNull()
+  })
+
+  it('sanitizes script tags in reply content', async () => {
+    const cm1 = { id: 'cm1', issue_id: 'i1', parent_id: '', author_id: 'u2', content: 'root', created_at: '' }
+    const cm2 = {
+      id: 'cm2',
+      issue_id: 'i1',
+      parent_id: 'cm1',
+      author_id: 'u3',
+      content: '回复<script>alert(1)</script>正文',
+      created_at: '',
+    }
+    mocked.listComments.mockResolvedValueOnce([cm1, cm2])
+    const { container } = renderPage()
+
+    const reply = await screen.findByTestId('reply-cm2')
+    expect(within(reply).getByText('回复正文')).toBeInTheDocument()
+    expect(container.querySelector('script')).toBeNull()
+  })
+
   it('adds a top-level comment', async () => {
     mocked.listComments.mockResolvedValueOnce([])
     mocked.addComment.mockResolvedValue({

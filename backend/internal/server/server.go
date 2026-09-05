@@ -22,6 +22,7 @@ import (
 	"specpowers/backend/internal/issue"
 	"specpowers/backend/internal/llm"
 	"specpowers/backend/internal/notification"
+	"specpowers/backend/internal/pr"
 	"specpowers/backend/internal/project"
 	"specpowers/backend/internal/skill"
 	"specpowers/backend/internal/store/postgres"
@@ -99,6 +100,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	runs := postgres.NewRunStore(pool)
 	runLogs := postgres.NewRunLogStore(pool)
 	issueEvents := postgres.NewIssueEventStore(pool)
+	pullRequests := postgres.NewPullRequestStore(pool)
 
 	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
 	notificationStore := postgres.NewNotificationStore(pool)
@@ -115,14 +117,18 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 				log.Printf("agent mention trigger: %v", err)
 			}
 		})
+	// Issue ↔ PR association: keys ("SP-44") in PR titles/bodies/branches
+	// link PRs to issues; close intents apply on merge.
+	prService := pr.NewService(pullRequests, issues, projects).WithEventStore(issueEvents)
+	prHandler := pr.NewHandler(prService, tokens)
 	issueHandler := issue.NewHandler(issueService, tokens).WithCollab(
 		collab.NewHandler(collabSvc, tokens).Routes(),
-	)
+	).WithPullRequests(prHandler.IssueRoutes())
 	projectHandler := project.NewHandler(
 		project.NewService(projects, users, members, workspaces),
 		tokens,
 		issueHandler.Routes(),
-	)
+	).WithPullRequests(prHandler.Routes())
 	workflowService := workflow.NewService(changes, artifacts, taskMappings, issues, projects)
 	workflowService = workflowService.WithWaker(issues)
 	runTrigger := agent.NewTrigger(agents, runs)

@@ -54,7 +54,7 @@ func TestMigrateIntegration(t *testing.T) {
 	if err := Migrate(ctx, db, MigrationsFS); err != nil {
 		t.Fatalf("second migrate (must be idempotent): %v", err)
 	}
-	for _, table := range []string{"users", "workspaces", "members", "roles", "projects", "project_members", "project_resources", "project_contexts", "issues", "issue_wakeups", "issue_comments", "issue_attachments", "issue_metadata", "changes", "artifacts", "task_mappings", "agents", "runs", "run_logs"} {
+	for _, table := range []string{"users", "workspaces", "members", "roles", "projects", "project_members", "project_resources", "project_contexts", "issues", "issue_wakeups", "issue_comments", "issue_attachments", "issue_metadata", "changes", "artifacts", "task_mappings", "agents", "runs", "run_logs", "pull_requests", "issue_pull_requests"} {
 		var n int
 		if err := pool.QueryRow(ctx, "SELECT count(*) FROM information_schema.tables WHERE table_name=$1", table).Scan(&n); err != nil {
 			t.Fatalf("query tables: %v", err)
@@ -182,7 +182,7 @@ func TestProjectStoreIntegration(t *testing.T) {
 		t.Fatalf("workspaces for mate = %v, %v", ids, err)
 	}
 
-	p, err := projects.CreateProject(ctx, ws.ID, "Alpha", "first", owner.ID)
+	p, err := projects.CreateProject(ctx, ws.ID, "Alpha", "first", owner.ID, "")
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestProjectDomainIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
 	}
-	p, err := projects.CreateProject(ctx, ws.ID, "Alpha", "desc", owner.ID)
+	p, err := projects.CreateProject(ctx, ws.ID, "Alpha", "desc", owner.ID, "")
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}

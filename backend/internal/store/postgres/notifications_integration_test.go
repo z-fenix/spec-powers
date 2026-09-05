@@ -31,7 +31,7 @@ func TestNotificationStoreRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
 	}
-	p, err := projects.CreateProject(ctx, ws.ID, "Notify", "desc", user.ID)
+	p, err := projects.CreateProject(ctx, ws.ID, "Notify", "desc", user.ID, "")
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}

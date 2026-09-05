@@ -2,9 +2,11 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"specpowers/backend/internal/domain"
@@ -17,17 +19,17 @@ type ProjectStore struct {
 
 func NewProjectStore(pool *pgxpool.Pool) *ProjectStore { return &ProjectStore{pool: pool} }
 
-const projectColumns = `id, workspace_id, name, description, archived, created_by, created_at`
+const projectColumns = `id, workspace_id, name, description, COALESCE(key, ''), archived, created_by, created_at`
 
 // qualifiedProjectColumns: same list as projectColumns but scoped to the
 // projects alias `p` for queries that join member tables (bare `id` would be
 // ambiguous).
 const qualifiedProjectColumns = `
-	p.id, p.workspace_id, p.name, p.description, p.archived, p.created_by, p.created_at`
+	p.id, p.workspace_id, p.name, p.description, COALESCE(p.key, ''), p.archived, p.created_by, p.created_at`
 
 func scanProject(row pgx.Row) (*domain.Project, error) {
 	p := &domain.Project{}
-	err := row.Scan(&p.ID, &p.WorkspaceID, &p.Name, &p.Description, &p.Archived, &p.CreatedBy, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.WorkspaceID, &p.Name, &p.Description, &p.Key, &p.Archived, &p.CreatedBy, &p.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, store.ErrNotFound
 	}
@@ -37,12 +39,25 @@ func scanProject(row pgx.Row) (*domain.Project, error) {
 	return p, nil
 }
 
-func (s *ProjectStore) CreateProject(ctx context.Context, workspaceID, name, description, createdBy string) (*domain.Project, error) {
-	return scanProject(s.pool.QueryRow(ctx, `
-		INSERT INTO projects (workspace_id, name, description, created_by)
-		VALUES ($1, $2, $3, $4)
+func (s *ProjectStore) CreateProject(ctx context.Context, workspaceID, name, description, createdBy, key string) (*domain.Project, error) {
+	p, err := scanProject(s.pool.QueryRow(ctx, `
+		INSERT INTO projects (workspace_id, name, description, key, created_by)
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5)
 		RETURNING `+projectColumns,
-		workspaceID, name, description, createdBy))
+		workspaceID, name, description, key, createdBy))
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return nil, store.ErrConflict
+	}
+	return p, err
+}
+
+// GetProjectByKey resolves an issue-key prefix ("SP") inside one workspace.
+// Empty keys never match.
+func (s *ProjectStore) GetProjectByKey(ctx context.Context, workspaceID, key string) (*domain.Project, error) {
+	return scanProject(s.pool.QueryRow(ctx, `
+		SELECT `+projectColumns+`
+		FROM projects WHERE workspace_id = $1 AND key = $2`, workspaceID, key))
 }
 
 func (s *ProjectStore) GetProject(ctx context.Context, id string) (*domain.Project, error) {

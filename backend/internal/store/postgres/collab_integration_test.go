@@ -32,7 +32,7 @@ func seedCollabIssue(t *testing.T, pool *pgxpool.Pool) (*domain.Issue, string) {
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
 	}
-	p, err := projects.CreateProject(ctx, ws.ID, "Collab", "desc", author.ID)
+	p, err := projects.CreateProject(ctx, ws.ID, "Collab", "desc", author.ID, "")
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}

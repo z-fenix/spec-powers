@@ -17,10 +17,20 @@ type Handler struct {
 	// issues is the issue-domain subrouter mounted under
 	// /{projectID}/issues; nil in tests that don't exercise issues.
 	issues http.Handler
+	// pullRequests is the PR subrouter mounted under
+	// /{projectID}/pullrequests; nil in tests that don't exercise PRs.
+	pullRequests http.Handler
 }
 
 func NewHandler(svc *Service, tokens *auth.TokenService, issues http.Handler) *Handler {
 	return &Handler{svc: svc, tokens: tokens, issues: issues}
+}
+
+// WithPullRequests attaches the pull-request subrouter served under
+// /{projectID}/pullrequests.
+func (h *Handler) WithPullRequests(p http.Handler) *Handler {
+	h.pullRequests = p
+	return h
 }
 
 type projectDTO struct {
@@ -28,6 +38,7 @@ type projectDTO struct {
 	WorkspaceID string `json:"workspace_id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	Key         string `json:"key"`
 	Archived    bool   `json:"archived"`
 	CreatedBy   string `json:"created_by"`
 }
@@ -35,7 +46,7 @@ type projectDTO struct {
 func toProjectDTO(p *domain.Project) projectDTO {
 	return projectDTO{
 		ID: p.ID, WorkspaceID: p.WorkspaceID, Name: p.Name,
-		Description: p.Description, Archived: p.Archived, CreatedBy: p.CreatedBy,
+		Description: p.Description, Key: p.Key, Archived: p.Archived, CreatedBy: p.CreatedBy,
 	}
 }
 
@@ -85,6 +96,9 @@ func (h *Handler) Routes() http.Handler {
 			if h.issues != nil {
 				r.Mount("/issues", h.issues)
 			}
+			if h.pullRequests != nil {
+				r.Mount("/pullrequests", h.pullRequests)
+			}
 			r.Group(func(r chi.Router) {
 				r.Use(h.requireRole("owner"))
 				r.Patch("/", h.update)
@@ -103,12 +117,13 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
+		Key         string `json:"key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpapi.Error(w, httpapi.ErrInvalid("malformed JSON body"))
 		return
 	}
-	p, err := h.svc.CreateProject(r.Context(), auth.UserIDFrom(r.Context()), req.Name, req.Description)
+	p, err := h.svc.CreateProject(r.Context(), auth.UserIDFrom(r.Context()), req.Name, req.Description, req.Key)
 	if err != nil {
 		writeAppError(w, err)
 		return

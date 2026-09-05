@@ -58,7 +58,8 @@ describe('WebhooksPage', () => {
 
   it('shows the empty state when no webhooks exist', async () => {
     renderPage()
-    expect(await screen.findByText('暂无 Webhook。')).toBeInTheDocument()
+    expect(await screen.findByTestId('page-empty')).toBeInTheDocument()
+    expect(screen.getByText('还没有 Webhook')).toBeInTheDocument()
   })
 
   it('shows an error when listing fails', async () => {

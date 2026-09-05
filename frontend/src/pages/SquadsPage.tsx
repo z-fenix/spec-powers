@@ -110,7 +110,13 @@ export function SquadsPage() {
   return (
     <div className="page" data-testid="squads-page">
       <div className="page-header">
-        <h1 className="page-title">小组</h1>
+        <span className="project-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden><circle cx="5.5" cy="5.5" r="2.25" stroke="currentColor" strokeWidth="1.3"/><circle cx="11" cy="6.5" r="1.75" stroke="currentColor" strokeWidth="1.3"/><path d="M1.75 13c.4-2.2 1.9-3.5 3.75-3.5S8.85 10.8 9.25 13M10 9.75c1.6.1 2.9 1.1 3.5 2.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg></span>
+        <h1 className="page-title">
+          小组
+          {squads && squads.length > 0 && (
+            <span className="page-count">{squads.length}</span>
+          )}
+        </h1>
       </div>
       <div className="page-body">
       {error && (
@@ -146,7 +152,11 @@ export function SquadsPage() {
         </button>
       </div>
 
-      {squads.length === 0 && <p>暂无小组。</p>}
+      {squads.length === 0 && <div className="page-empty" data-testid="page-empty">
+          <span className="page-empty-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden><circle cx="5.5" cy="5.5" r="2.25" stroke="currentColor" strokeWidth="1.3"/><circle cx="11" cy="6.5" r="1.75" stroke="currentColor" strokeWidth="1.3"/><path d="M1.75 13c.4-2.2 1.9-3.5 3.75-3.5S8.85 10.8 9.25 13M10 9.75c1.6.1 2.9 1.1 3.5 2.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg></span>
+          <p className="page-empty-title">还没有小组</p>
+          <p className="page-empty-desc">创建小组后可以把任务指派给整个小组。</p>
+        </div>}
       <ul className="squad-list">
         {squads.map((s) => {
           const leader = s.members?.find((m) => m.user_id === s.leader_id)

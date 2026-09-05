@@ -129,14 +129,24 @@ export function AutopilotsPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="page-title">Autopilots</h1>
+        <span className="project-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3"/><path d="M8 4.5V8l2.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg></span>
+        <h1 className="page-title">
+          Autopilots
+          {autopilots && autopilots.length > 0 && (
+            <span className="page-count">{autopilots.length}</span>
+          )}
+        </h1>
         <button type="button" className="btn btn-primary" data-testid="autopilot-create" onClick={() => setShowCreate(true)}>
           新建 Autopilot
         </button>
       </div>
       {error && <p role="alert">{error}</p>}
       {!error && autopilots === null && <p>加载中…</p>}
-      {autopilots && autopilots.length === 0 && <p>暂无 Autopilot。</p>}
+      {autopilots && autopilots.length === 0 && <div className="page-empty" data-testid="page-empty">
+          <span className="page-empty-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3"/><path d="M8 4.5V8l2.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg></span>
+          <p className="page-empty-title">还没有 Autopilot</p>
+          <p className="page-empty-desc">创建 Autopilot 让任务按计划或事件自动开始。</p>
+        </div>}
       <ul className="autopilot-list">
         {(autopilots ?? []).map((a) => (
           <li key={a.id} data-testid={`autopilot-row-${a.id}`}>

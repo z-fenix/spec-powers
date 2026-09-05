@@ -90,7 +90,8 @@ describe('SquadsPage', () => {
   it('shows the empty state when no squads exist', async () => {
     mockedSquads.listSquads.mockResolvedValueOnce([])
     renderPage()
-    expect(await screen.findByText('暂无小组。')).toBeInTheDocument()
+    expect(await screen.findByTestId('page-empty')).toBeInTheDocument()
+    expect(screen.getByText('还没有小组')).toBeInTheDocument()
   })
 
   it('shows an error when listing fails', async () => {

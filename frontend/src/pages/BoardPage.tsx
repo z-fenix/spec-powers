@@ -10,7 +10,8 @@ import {
 import { getChangeByIssue, listArtifacts, type Artifact } from '../api/workflow'
 import { getRun, type RunLog } from '../api/runs'
 import { ApiError } from '../api/client'
-import { STATUSES, STATUS_LABELS } from '../lib/status'
+import { listStatuses, upsertStatus, deleteStatus } from '../api/statuses'
+import { DEFAULT_DIRECTORY, STATUS_CATEGORIES, CATEGORY_LABELS, statusLabel, type StatusEntry } from '../lib/status'
 import { StatusIcon } from '../components/StatusIcon'
 import { Modal } from '../components/Modal'
 
@@ -29,6 +30,7 @@ const KIND_LABELS: Record<string, string> = {
 interface IssueCardProps {
   issue: Issue
   projectId: string
+  directory: StatusEntry[]
   onTransition: (issueId: string, status: string) => void
   onDragStart: (issueId: string) => void
   onDropOnCard: (dragId: string, targetIssueId: string) => void
@@ -37,11 +39,13 @@ interface IssueCardProps {
 function IssueCard({
   issue,
   projectId,
+  directory,
   onTransition,
   onDragStart,
   onDropOnCard,
 }: IssueCardProps) {
   const [showArtifacts, setShowArtifacts] = useState(false)
+  const category = directory.find((s) => s.name === issue.status)?.category
   return (
     <div
       className="board-card"
@@ -60,7 +64,7 @@ function IssueCard({
       }}
     >
       <div className="board-card-top">
-        <StatusIcon status={issue.status} />
+        <StatusIcon status={issue.status} category={category} />
         {issue.stage > 0 && <span className="chip">S{issue.stage}</span>}
       </div>
       <p className="board-card-title">
@@ -73,9 +77,9 @@ function IssueCard({
           value={issue.status}
           onChange={(e) => onTransition(issue.id, e.target.value)}
         >
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABELS[s]}
+          {directory.map((s) => (
+            <option key={s.name} value={s.name}>
+              {statusLabel(s.name)}
             </option>
           ))}
         </select>
@@ -178,11 +182,15 @@ function IssueArtifacts({ issueId }: { issueId: string }) {
 export function BoardPage() {
   const { id = '' } = useParams()
   const [issues, setIssues] = useState<Issue[] | null>(null)
+  const [directory, setDirectory] = useState<StatusEntry[]>(DEFAULT_DIRECTORY)
   const [error, setError] = useState('')
   const [view, setView] = useState<'board' | 'list'>('board')
   const [statusFilter, setStatusFilter] = useState('')
   const [stageFilter, setStageFilter] = useState('')
   const [showCreate, setShowCreate] = useState(false)
+  const [showDirectory, setShowDirectory] = useState(false)
+  const [newStatusName, setNewStatusName] = useState('')
+  const [newStatusCategory, setNewStatusCategory] = useState<string>(STATUS_CATEGORIES[1])
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [stage, setStage] = useState('')
@@ -202,6 +210,23 @@ export function BoardPage() {
     setError('')
     load()
   }, [load])
+
+  // Status directory drives the kanban columns; fall back to the built-in
+  // seven when the workspace directory cannot be loaded.
+  useEffect(() => {
+    let cancelled = false
+    listStatuses(id)
+      .then((list) => {
+        if (cancelled) return
+        setDirectory(list.length > 0 ? list : DEFAULT_DIRECTORY)
+      })
+      .catch(() => {
+        if (!cancelled) setDirectory(DEFAULT_DIRECTORY)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [id])
 
   const onFilter = (status: string, stage: string) => {
     setStatusFilter(status)
@@ -299,9 +324,9 @@ export function BoardPage() {
             onChange={(e) => onFilter(e.target.value, stageFilter)}
           >
             <option value="">全部状态</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {STATUS_LABELS[s]}
+            {directory.map((s) => (
+              <option key={s.name} value={s.name}>
+                {statusLabel(s.name)}
               </option>
             ))}
           </select>
@@ -331,6 +356,13 @@ export function BoardPage() {
             >
               列表
             </button>
+            <button
+              className="btn btn-outline btn-sm"
+              data-testid="toggle-statuses"
+              onClick={() => { setError(''); setShowDirectory(true) }}
+            >
+              状态目录
+            </button>
             <button className="btn btn-primary btn-sm" data-testid="toggle-create" onClick={() => { setError(''); setShowCreate(true) }}>
               新建 Issue
             </button>
@@ -343,30 +375,33 @@ export function BoardPage() {
           <p className="page-gutter">加载中…</p>
         ) : view === 'board' ? (
           <div className="board">
-            {STATUSES.map((s) => (
+            {[...directory]
+              .sort((a, b) => a.position - b.position)
+              .map((s) => (
               <div
-                key={s}
+                key={s.name}
                 className="board-col"
-                data-status={s}
-                data-testid={`column-${s}`}
+                data-status={s.name}
+                data-testid={`column-${s.name}`}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault()
                   const dragId = e.dataTransfer.getData('text/plain') || dragIssueId
-                  if (dragId) onDropInColumn(dragId, s, null)
+                  if (dragId) onDropInColumn(dragId, s.name, null)
                 }}
               >
                 <div className="board-col-header">
-                  <StatusIcon status={s} />
-                  {STATUS_LABELS[s]}
-                  <span className="board-col-count">{byStatus(visible, s).length}</span>
+                  <StatusIcon status={s.name} category={s.category} />
+                  {statusLabel(s.name)}
+                  <span className="board-col-count">{byStatus(visible, s.name).length}</span>
                 </div>
                 <div className="board-col-cards">
-                  {byStatus(visible, s).map((i) => (
+                  {byStatus(visible, s.name).map((i) => (
                     <IssueCard
                       key={i.id}
                       issue={i}
                       projectId={id}
+                      directory={directory}
                       onTransition={onTransition}
                       onDragStart={setDragIssueId}
                       onDropOnCard={onDropOnCard}
@@ -388,6 +423,7 @@ export function BoardPage() {
                       key={i.id}
                       issue={i}
                       projectId={id}
+                      directory={directory}
                       onTransition={onTransition}
                       onDragStart={setDragIssueId}
                       onDropOnCard={onDropOnCard}
@@ -449,6 +485,75 @@ export function BoardPage() {
                 创建
               </button>
             </div>
+          </form>
+        </Modal>
+      )}
+
+      {showDirectory && (
+        <Modal
+          title="状态目录"
+          description="工作区的状态目录定义看板列与状态流转类别。"
+          onClose={() => setShowDirectory(false)}
+        >
+          <ul data-testid="status-directory">
+            {directory.map((s) => (
+              <li key={s.name} data-testid={`dir-row-${s.name}`}>
+                {statusLabel(s.name)} · {CATEGORY_LABELS[s.category] ?? s.category}
+                <button
+                  data-testid={`dir-delete-${s.name}`}
+                  onClick={() => {
+                    setError('')
+                    deleteStatus(id, s.name)
+                      .then((list) => setDirectory(list.length > 0 ? list : DEFAULT_DIRECTORY))
+                      .catch((err) => setError(errorMessage(err, '删除状态失败')))
+                  }}
+                >
+                  删除
+                </button>
+              </li>
+            ))}
+          </ul>
+          <form
+            data-testid="dir-form"
+            onSubmit={(e) => {
+              e.preventDefault()
+              setError('')
+              upsertStatus(id, newStatusName, newStatusCategory)
+                .then((list) => {
+                  setDirectory(list)
+                  setNewStatusName('')
+                  setNewStatusCategory(STATUS_CATEGORIES[1])
+                })
+                .catch((err) => setError(errorMessage(err, '保存状态失败')))
+            }}
+          >
+            <label>
+              名称
+              <input
+                className="input"
+                data-testid="dir-name"
+                value={newStatusName}
+                onChange={(e) => setNewStatusName(e.target.value)}
+                required
+              />
+            </label>
+            <label>
+              类别
+              <select
+                data-testid="dir-category"
+                value={newStatusCategory}
+                onChange={(e) => setNewStatusCategory(e.target.value)}
+              >
+                {STATUS_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {CATEGORY_LABELS[c]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" className="btn btn-primary" data-testid="dir-submit">
+              添加状态
+            </button>
           </form>
         </Modal>
       )}

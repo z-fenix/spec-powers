@@ -13,8 +13,11 @@ const STATUS_COLOR_CLASS: Record<string, string> = {
   cancelled: 'status-muted',
 }
 
-export function StatusIcon({ status }: { status: string }) {
-  const cls = STATUS_COLOR_CLASS[status] ?? 'status-muted'
+/* Custom workspace statuses render through their category; built-in
+   statuses pass their name, which doubles as the category. */
+export function StatusIcon({ status, category }: { status: string; category?: string }) {
+  const kind = category ?? status
+  const cls = STATUS_COLOR_CLASS[kind] ?? 'status-muted'
   const common = {
     className: `status-icon ${cls}`,
     width: 14,
@@ -23,7 +26,7 @@ export function StatusIcon({ status }: { status: string }) {
     'aria-hidden': true as const,
   }
 
-  switch (status) {
+  switch (kind) {
     case 'in_progress':
       return (
         <svg {...common}>

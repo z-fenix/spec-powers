@@ -223,6 +223,60 @@ type TaskMapping struct {
 	CreatedAt  time.Time
 }
 
+// Status categories are the fixed behavior classes a workspace status can
+// belong to; the state machine operates on categories, not raw status names.
+const (
+	CatBacklog    = "backlog"
+	CatTodo       = "todo"
+	CatInProgress = "in_progress"
+	CatInReview   = "in_review"
+	CatBlocked    = "blocked"
+	CatDone       = "done"
+	CatCancelled  = "cancelled"
+)
+
+func IsValidStatusCategory(c string) bool {
+	switch c {
+	case CatBacklog, CatTodo, CatInProgress, CatInReview, CatBlocked, CatDone, CatCancelled:
+		return true
+	}
+	return false
+}
+
+// WorkspaceStatus is one entry of a workspace's status directory: a status
+// name issues can carry plus the category that drives its state-machine
+// behavior. Position orders kanban columns.
+type WorkspaceStatus struct {
+	WorkspaceID string
+	Name        string
+	Category    string
+	Position    int
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// DefaultStatusDirectory returns the built-in directory used by any
+// workspace that has not customized its statuses.
+func DefaultStatusDirectory() []WorkspaceStatus {
+	entries := []struct {
+		name string
+		cat  string
+	}{
+		{"backlog", CatBacklog},
+		{"todo", CatTodo},
+		{"in_progress", CatInProgress},
+		{"in_review", CatInReview},
+		{"blocked", CatBlocked},
+		{"done", CatDone},
+		{"cancelled", CatCancelled},
+	}
+	out := make([]WorkspaceStatus, 0, len(entries))
+	for i, e := range entries {
+		out = append(out, WorkspaceStatus{Name: e.name, Category: e.cat, Position: i})
+	}
+	return out
+}
+
 // Notification is one in-app notification for a user. Kind describes the
 // event source ("comment", "run_finished", "phase_advanced"); IssueID and
 // ProjectID link the notification to the issue it is about so UIs can deep

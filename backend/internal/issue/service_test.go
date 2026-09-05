@@ -143,15 +143,16 @@ func (f *fakeIssues) ListIssueWakeups(_ context.Context, issueID string) ([]doma
 
 type fakeProjects struct {
 	store.ProjectStore
-	existing map[string]bool
-	members  map[string]string // "project|user" -> role
+	existing   map[string]bool
+	members    map[string]string // "project|user" -> role
+	workspaces map[string]string // project -> workspaceID
 }
 
 func (f *fakeProjects) GetProject(_ context.Context, id string) (*domain.Project, error) {
 	if !f.existing[id] {
 		return nil, store.ErrNotFound
 	}
-	return &domain.Project{ID: id}, nil
+	return &domain.Project{ID: id, WorkspaceID: f.workspaces[id]}, nil
 }
 
 func (f *fakeProjects) GetProjectMember(_ context.Context, projectID, userID string) (*domain.ProjectMember, error) {

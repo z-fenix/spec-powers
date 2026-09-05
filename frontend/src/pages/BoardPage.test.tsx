@@ -34,10 +34,23 @@ vi.mock('../api/runs', async (importOriginal) => {
   }
 })
 
+vi.mock('../api/statuses', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/statuses')>()
+  return {
+    ...actual,
+    listStatuses: vi.fn(),
+    upsertStatus: vi.fn(),
+    deleteStatus: vi.fn(),
+  }
+})
+
 import { getChangeByIssue, listArtifacts } from '../api/workflow'
 import type { Change, Artifact } from '../api/workflow'
 import { getRun } from '../api/runs'
 import type { Run, RunLog } from '../api/runs'
+import { listStatuses, upsertStatus, deleteStatus } from '../api/statuses'
+import type { WorkspaceStatus } from '../api/statuses'
+import { DEFAULT_DIRECTORY } from '../lib/status'
 
 const mocked = vi.mocked(api)
 
@@ -133,7 +146,12 @@ function renderPage() {
 beforeEach(() => {
   vi.clearAllMocks()
   mocked.listIssues.mockResolvedValue([])
+  vi.mocked(listStatuses).mockResolvedValue(DEFAULT_DIRECTORY)
 })
+
+function makeStatus(overrides: Partial<WorkspaceStatus>): WorkspaceStatus {
+  return { name: 'custom', category: 'todo', position: 0, ...overrides }
+}
 
 describe('BoardPage', () => {
   it('renders kanban columns by status and places cards in the right column', async () => {
@@ -278,6 +296,70 @@ describe('BoardPage', () => {
 
     expect(mocked.updateIssue).not.toHaveBeenCalled()
     expect(mocked.transitionIssue).not.toHaveBeenCalled()
+  })
+
+  it('renders kanban columns from the workspace status directory', async () => {
+    vi.mocked(listStatuses).mockResolvedValue([
+      makeStatus({ name: 'todo', category: 'todo', position: 0 }),
+      makeStatus({ name: 'doing', category: 'in_progress', position: 1 }),
+      makeStatus({ name: 'qa_review', category: 'in_review', position: 2 }),
+      makeStatus({ name: 'shipped', category: 'done', position: 3 }),
+    ])
+    mocked.listIssues.mockResolvedValue([
+      makeIssue({ id: 'a', title: 'qa card', status: 'qa_review' }),
+    ])
+    renderPage()
+
+    const qaColumn = await screen.findByTestId('column-qa_review')
+    expect(within(qaColumn).getByText('qa card')).toBeInTheDocument()
+    // columns follow the directory: custom ones appear, dropped built-ins go
+    expect(screen.getByTestId('column-doing')).toBeInTheDocument()
+    expect(screen.queryByTestId('column-backlog')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('column-blocked')).not.toBeInTheDocument()
+    // cards offer exactly the directory statuses in their transition select
+    expect(within(qaColumn).getByRole('option', { name: 'qa_review' })).toBeInTheDocument()
+    expect(within(qaColumn).getByRole('option', { name: '待办' })).toBeInTheDocument()
+    expect(within(qaColumn).queryByRole('option', { name: '阻塞' })).not.toBeInTheDocument()
+  })
+
+  it('falls back to the built-in columns when the directory request fails', async () => {
+    vi.mocked(listStatuses).mockRejectedValue(new Error('boom'))
+    renderPage()
+
+    expect(await screen.findByTestId('column-todo')).toBeInTheDocument()
+    expect(screen.getByTestId('column-blocked')).toBeInTheDocument()
+  })
+
+  it('adds a status through the directory manager and renders its column', async () => {
+    const withCustom = [
+      ...DEFAULT_DIRECTORY,
+      makeStatus({ name: 'qa_review', category: 'in_review', position: 7 }),
+    ]
+    vi.mocked(upsertStatus).mockResolvedValue(withCustom)
+    renderPage()
+    await screen.findByTestId('column-todo')
+
+    await userEvent.click(screen.getByTestId('toggle-statuses'))
+    await userEvent.type(screen.getByTestId('dir-name'), 'qa_review')
+    await userEvent.selectOptions(screen.getByTestId('dir-category'), 'in_review')
+    await userEvent.click(screen.getByTestId('dir-submit'))
+
+    expect(vi.mocked(upsertStatus)).toHaveBeenCalledWith('p1', 'qa_review', 'in_review')
+    expect(await screen.findByTestId('column-qa_review')).toBeInTheDocument()
+  })
+
+  it('deletes a status through the directory manager and drops its column', async () => {
+    vi.mocked(deleteStatus).mockResolvedValue(DEFAULT_DIRECTORY.filter((s) => s.name !== 'blocked'))
+    renderPage()
+    await screen.findByTestId('column-blocked')
+
+    await userEvent.click(screen.getByTestId('toggle-statuses'))
+    await userEvent.click(screen.getByTestId('dir-delete-blocked'))
+
+    expect(vi.mocked(deleteStatus)).toHaveBeenCalledWith('p1', 'blocked')
+    await vi.waitFor(() => {
+      expect(screen.queryByTestId('column-blocked')).not.toBeInTheDocument()
+    })
   })
 
   it('shows the error message when loading fails', async () => {

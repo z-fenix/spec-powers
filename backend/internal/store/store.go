@@ -35,6 +35,20 @@ type MemberStore interface {
 	ListWorkspaceIDsForUser(ctx context.Context, userID string) ([]string, error)
 }
 
+// WorkspaceStatusStore is a workspace's status directory: the set of status
+// names issues may carry plus the category each maps to. A workspace with no
+// stored rows uses the built-in defaults (domain.DefaultStatusDirectory);
+// the first mutation materializes them.
+type WorkspaceStatusStore interface {
+	// ListStatuses returns the directory ordered by position; built-in
+	// defaults when the workspace has no stored rows.
+	ListStatuses(ctx context.Context, workspaceID string) ([]domain.WorkspaceStatus, error)
+	// UpsertStatus creates or updates one entry by (workspace, name).
+	UpsertStatus(ctx context.Context, s *domain.WorkspaceStatus) (*domain.WorkspaceStatus, error)
+	// DeleteStatus removes one entry; ErrNotFound when missing.
+	DeleteStatus(ctx context.Context, workspaceID, name string) error
+}
+
 type ProjectStore interface {
 	CreateProject(ctx context.Context, workspaceID, name, description, createdBy string) (*domain.Project, error)
 	GetProject(ctx context.Context, id string) (*domain.Project, error)

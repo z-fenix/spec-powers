@@ -774,6 +774,8 @@ export function IssueDetailPage() {
             </div>
 
             <div className="detail-section">
+              <h3>时间线</h3>
+              <TimelinePanel projectId={id} issueId={issueId} />
               <IssueUsagePanel issueId={issueId} />
             </div>
 
@@ -786,6 +788,7 @@ export function IssueDetailPage() {
                     comment={c}
                     replies={repliesOf(c.id)}
                     onReply={onReply}
+                    candidates={candidates}
                   />
                 ))}
               </div>

@@ -242,3 +242,29 @@ type NotificationStore interface {
 	// of the user and returns how many rows changed.
 	MarkAllNotificationsRead(ctx context.Context, userID string, readAt time.Time) (int, error)
 }
+
+type WebhookStore interface {
+	CreateWebhook(ctx context.Context, w *domain.Webhook) (*domain.Webhook, error)
+	GetWebhook(ctx context.Context, id string) (*domain.Webhook, error)
+	ListWebhooks(ctx context.Context) ([]domain.Webhook, error)
+	// UpdateWebhook persists the webhook's mutable fields (name, secret,
+	// enabled) and returns the updated row.
+	UpdateWebhook(ctx context.Context, w *domain.Webhook) (*domain.Webhook, error)
+	DeleteWebhook(ctx context.Context, id string) error
+}
+
+type AutopilotStore interface {
+	CreateAutopilot(ctx context.Context, a *domain.Autopilot) (*domain.Autopilot, error)
+	GetAutopilot(ctx context.Context, id string) (*domain.Autopilot, error)
+	ListAutopilots(ctx context.Context) ([]domain.Autopilot, error)
+	// UpdateAutopilot persists the autopilot's mutable fields, including
+	// enabled, last_fired_at and next_run_at (scheduler bookkeeping).
+	UpdateAutopilot(ctx context.Context, a *domain.Autopilot) (*domain.Autopilot, error)
+	DeleteAutopilot(ctx context.Context, id string) error
+	// ListAutopilotsByWebhook returns the autopilots bound to one inbound
+	// webhook; enabledOnly restricts to enabled ones.
+	ListAutopilotsByWebhook(ctx context.Context, webhookID string, enabledOnly bool) ([]domain.Autopilot, error)
+	// DueCronAutopilots returns enabled cron autopilots whose next_run_at
+	// is due (NULL counts as due, so a fresh autopilot fires immediately).
+	DueCronAutopilots(ctx context.Context, now time.Time) ([]domain.Autopilot, error)
+}

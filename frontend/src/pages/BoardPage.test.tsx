@@ -13,6 +13,7 @@ vi.mock('../api/issues', async (importOriginal) => {
     listIssues: vi.fn(),
     createIssue: vi.fn(),
     transitionIssue: vi.fn(),
+    updateIssue: vi.fn(),
   }
 })
 
@@ -197,10 +198,78 @@ describe('BoardPage', () => {
       title: 'fresh issue',
       description: '',
       stage: 2,
+      priority: 'none',
+      labels: undefined,
+      due_date: undefined,
     })
     await vi.waitFor(() => {
       expect(mocked.listIssues).toHaveBeenCalledTimes(2)
     })
+  })
+
+  it('reloads with a label filter', async () => {
+    renderPage()
+    await screen.findByTestId('board')
+
+    await userEvent.type(screen.getByTestId('filter-label'), 'backend')
+
+    expect(mocked.listIssues).toHaveBeenLastCalledWith('p1', { label: 'backend' })
+  })
+
+  it('creates an issue with priority, labels and due date', async () => {
+    mocked.listIssues.mockResolvedValue([])
+    mocked.createIssue.mockResolvedValue(makeIssue({ id: 'new' }))
+    renderPage()
+    await screen.findByTestId('board')
+
+    await userEvent.click(screen.getByTestId('toggle-create'))
+    await userEvent.type(screen.getByTestId('create-title'), 'fresh issue')
+    await userEvent.selectOptions(screen.getByTestId('create-priority'), 'high')
+    await userEvent.type(screen.getByTestId('create-labels'), 'backend, api')
+    await userEvent.type(screen.getByTestId('create-due'), '2026-12-31')
+    await userEvent.click(screen.getByTestId('submit-create'))
+
+    expect(mocked.createIssue).toHaveBeenCalledWith('p1', {
+      title: 'fresh issue',
+      description: '',
+      stage: undefined,
+      priority: 'high',
+      labels: ['backend', 'api'],
+      due_date: '2026-12-31',
+    })
+  })
+
+  it('shows priority, labels and overdue due date on a card', async () => {
+    mocked.listIssues.mockResolvedValue([
+      makeIssue({ id: 'a', title: 'card a', priority: 'high', labels: ['backend'], due_date: '2020-01-01' }),
+    ])
+    renderPage()
+
+    await screen.findByText('card a')
+    expect(screen.getByTestId('priority-a')).toHaveValue('high')
+    expect(screen.getByTestId('labels-a')).toHaveTextContent('backend')
+    expect(screen.getByTestId('due-a')).toHaveClass('overdue')
+    expect(screen.getByTestId('due-a')).toHaveTextContent('已逾期')
+  })
+
+  it('does not mark a future due date as overdue', async () => {
+    mocked.listIssues.mockResolvedValue([
+      makeIssue({ id: 'a', title: 'card a', due_date: '2030-01-01' }),
+    ])
+    renderPage()
+
+    await screen.findByText('card a')
+    expect(screen.getByTestId('due-a')).not.toHaveClass('overdue')
+  })
+
+  it('changes priority from the card', async () => {
+    mocked.listIssues.mockResolvedValue([makeIssue({ id: 'a', title: 'card a' })])
+    mocked.updateIssue.mockResolvedValue(makeIssue({ id: 'a', priority: 'urgent' }))
+    renderPage()
+
+    await userEvent.selectOptions(await screen.findByTestId('priority-a'), 'urgent')
+
+    expect(mocked.updateIssue).toHaveBeenCalledWith('p1', 'a', { priority: 'urgent' })
   })
 
   it('transitions an issue status from its card', async () => {

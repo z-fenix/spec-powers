@@ -140,7 +140,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	httpapi.JSON(w, http.StatusCreated, map[string]any{"issue": toIssueDTO(i)})
 }
 
-// parseListFilter reads list query params: status, stage and parent
+// parseListFilter reads list query params: status, stage, label and parent
 // ("root" selects root issues only). Unknown values are silently ignored
 // except stage, which must be numeric.
 func parseListFilter(r *http.Request) (store.IssueFilter, error) {
@@ -162,6 +162,9 @@ func parseListFilter(r *http.Request) (store.IssueFilter, error) {
 			parent = ""
 		}
 		filter.ParentID = &parent
+	}
+	if s := q.Get("label"); s != "" {
+		filter.Label = s
 	}
 	return filter, nil
 }

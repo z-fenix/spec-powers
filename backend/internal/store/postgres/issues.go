@@ -121,6 +121,10 @@ func (s *IssueStore) ListIssues(ctx context.Context, projectID string, filter st
 		args = append(args, *filter.Stage)
 		where += fmt.Sprintf(" AND stage = $%d", len(args))
 	}
+	if filter.Label != "" {
+		args = append(args, filter.Label)
+		where += fmt.Sprintf(" AND labels @> ARRAY[$%d]::text[]", len(args))
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+issueColumns+`
 		FROM issues WHERE `+where+`

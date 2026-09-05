@@ -4,12 +4,20 @@ import {
   createIssue,
   listIssues,
   transitionIssue,
+  updateIssue,
   type Issue,
 } from '../api/issues'
 import { getChangeByIssue, listArtifacts, type Artifact } from '../api/workflow'
 import { getRun, type RunLog } from '../api/runs'
 import { ApiError } from '../api/client'
-import { STATUSES, STATUS_LABELS } from '../lib/status'
+import {
+  PRIORITIES,
+  PRIORITY_LABELS,
+  STATUSES,
+  STATUS_LABELS,
+  isOverdue,
+  parseLabels,
+} from '../lib/status'
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError || err instanceof Error ? err.message : fallback
@@ -27,14 +35,43 @@ interface IssueCardProps {
   issue: Issue
   projectId: string
   onTransition: (issueId: string, status: string) => void
+  onPriorityChange: (issueId: string, priority: string) => void
 }
 
-function IssueCard({ issue, projectId, onTransition }: IssueCardProps) {
+function IssueCard({ issue, projectId, onTransition, onPriorityChange }: IssueCardProps) {
   const [showArtifacts, setShowArtifacts] = useState(false)
+  const overdue = isOverdue(issue.due_date, issue.status)
   return (
     <div className="issue-card" data-testid={`card-${issue.id}`}>
       <Link to={`/projects/${projectId}/issues/${issue.id}`}>{issue.title}</Link>
       {issue.stage > 0 && <span className="badge">S{issue.stage}</span>}
+      <select
+        aria-label="优先级"
+        data-testid={`priority-${issue.id}`}
+        value={issue.priority}
+        onChange={(e) => onPriorityChange(issue.id, e.target.value)}
+      >
+        {PRIORITIES.map((p) => (
+          <option key={p} value={p}>
+            {PRIORITY_LABELS[p]}
+          </option>
+        ))}
+      </select>
+      {issue.labels.length > 0 && (
+        <span className="card-labels" data-testid={`labels-${issue.id}`}>
+          {issue.labels.map((l) => (
+            <span key={l} className="badge label">
+              {l}
+            </span>
+          ))}
+        </span>
+      )}
+      {issue.due_date && (
+        <span className={overdue ? 'due-date overdue' : 'due-date'} data-testid={`due-${issue.id}`}>
+          截止: {issue.due_date.slice(0, 10)}
+          {overdue && '（已逾期）'}
+        </span>
+      )}
       <select
         aria-label="状态"
         data-testid={`status-${issue.id}`}
@@ -149,13 +186,17 @@ export function BoardPage() {
   const [view, setView] = useState<'board' | 'list'>('board')
   const [statusFilter, setStatusFilter] = useState('')
   const [stageFilter, setStageFilter] = useState('')
+  const [labelFilter, setLabelFilter] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [stage, setStage] = useState('')
+  const [priority, setPriority] = useState('none')
+  const [labels, setLabels] = useState('')
+  const [dueDate, setDueDate] = useState('')
 
   const load = useCallback(
-    (filter?: { status?: string; stage?: number }) => {
+    (filter?: { status?: string; stage?: number; label?: string }) => {
       return listIssues(id, filter)
         .then(setIssues)
         .catch((err) => setError(errorMessage(err, '加载失败')))
@@ -169,12 +210,14 @@ export function BoardPage() {
     load()
   }, [load])
 
-  const onFilter = (status: string, stage: string) => {
+  const onFilter = (status: string, stage: string, label: string) => {
     setStatusFilter(status)
     setStageFilter(stage)
-    const filter: { status?: string; stage?: number } = {}
+    setLabelFilter(label)
+    const filter: { status?: string; stage?: number; label?: string } = {}
     if (status) filter.status = status
     if (stage) filter.stage = Number(stage)
+    if (label) filter.label = label
     load(filter)
   }
 
@@ -185,6 +228,13 @@ export function BoardPage() {
       .catch((err) => setError(errorMessage(err, '状态流转失败')))
   }
 
+  const onPriorityChange = (issueId: string, prio: string) => {
+    setError('')
+    updateIssue(id, issueId, { priority: prio })
+      .then(() => load())
+      .catch((err) => setError(errorMessage(err, '优先级更新失败')))
+  }
+
   const onCreate = (e: FormEvent) => {
     e.preventDefault()
     setError('')
@@ -192,11 +242,17 @@ export function BoardPage() {
       title,
       description,
       stage: stage ? Number(stage) : undefined,
+      priority,
+      labels: labels ? parseLabels(labels) : undefined,
+      due_date: dueDate || undefined,
     })
       .then(() => {
         setTitle('')
         setDescription('')
         setStage('')
+        setPriority('none')
+        setLabels('')
+        setDueDate('')
         setShowCreate(false)
         return load()
       })
@@ -219,7 +275,7 @@ export function BoardPage() {
           aria-label="状态筛选"
           data-testid="filter-status"
           value={statusFilter}
-          onChange={(e) => onFilter(e.target.value, stageFilter)}
+          onChange={(e) => onFilter(e.target.value, stageFilter, labelFilter)}
         >
           <option value="">全部状态</option>
           {STATUSES.map((s) => (
@@ -235,7 +291,14 @@ export function BoardPage() {
           min={0}
           placeholder="Stage"
           value={stageFilter}
-          onChange={(e) => onFilter(statusFilter, e.target.value)}
+          onChange={(e) => onFilter(statusFilter, e.target.value, labelFilter)}
+        />
+        <input
+          aria-label="标签筛选"
+          data-testid="filter-label"
+          placeholder="标签"
+          value={labelFilter}
+          onChange={(e) => onFilter(statusFilter, stageFilter, e.target.value)}
         />
         <button data-testid="view-board" onClick={() => setView('board')}>
           看板
@@ -271,6 +334,31 @@ export function BoardPage() {
             value={stage}
             onChange={(e) => setStage(e.target.value)}
           />
+          <select
+            aria-label="优先级"
+            data-testid="create-priority"
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+          >
+            {PRIORITIES.map((p) => (
+              <option key={p} value={p}>
+                {PRIORITY_LABELS[p]}
+              </option>
+            ))}
+          </select>
+          <input
+            data-testid="create-labels"
+            placeholder="标签（逗号分隔）"
+            value={labels}
+            onChange={(e) => setLabels(e.target.value)}
+          />
+          <input
+            data-testid="create-due"
+            type="date"
+            aria-label="截止日"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+          />
           <button type="submit" data-testid="submit-create">
             创建
           </button>
@@ -287,7 +375,7 @@ export function BoardPage() {
                 {STATUS_LABELS[s]} <span className="count">{byStatus(visible, s).length}</span>
               </h3>
               {byStatus(visible, s).map((i) => (
-                <IssueCard key={i.id} issue={i} projectId={id} onTransition={onTransition} />
+                <IssueCard key={i.id} issue={i} projectId={id} onTransition={onTransition} onPriorityChange={onPriorityChange} />
               ))}
             </div>
           ))}
@@ -300,7 +388,7 @@ export function BoardPage() {
               <div key={stageNum} data-testid={`stage-group-${stageNum}`}>
                 <h3>Stage {stageNum}</h3>
                 {byStage(stageNum).map((i) => (
-                  <IssueCard key={i.id} issue={i} projectId={id} onTransition={onTransition} />
+                  <IssueCard key={i.id} issue={i} projectId={id} onTransition={onTransition} onPriorityChange={onPriorityChange} />
                 ))}
               </div>
             ))}

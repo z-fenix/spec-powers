@@ -79,6 +79,7 @@ export interface IssueFilter {
   status?: string
   stage?: number
   parent?: string
+  label?: string
 }
 
 function issuePath(projectId: string, issueId?: string): string {
@@ -92,6 +93,7 @@ function withQuery(path: string, filter?: IssueFilter): string {
   if (filter.status) params.set('status', filter.status)
   if (filter.stage !== undefined) params.set('stage', String(filter.stage))
   if (filter.parent) params.set('parent', filter.parent)
+  if (filter.label) params.set('label', filter.label)
   const qs = params.toString()
   return qs ? `${path}?${qs}` : path
 }

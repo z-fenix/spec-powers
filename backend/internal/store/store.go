@@ -52,11 +52,12 @@ type ProjectStore interface {
 
 // IssueFilter narrows ListIssues. ParentID nil means "no filter"; a pointer
 // to "" selects root issues only. Empty Status means all statuses; nil Stage
-// means all stages.
+// means all stages; empty Label means all labels.
 type IssueFilter struct {
 	ParentID *string
 	Status   string
 	Stage    *int
+	Label    string
 }
 
 type IssueStore interface {

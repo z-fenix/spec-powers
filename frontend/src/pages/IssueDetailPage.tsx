@@ -19,7 +19,14 @@ import {
   type MetadataEntry,
 } from '../api/issues'
 import { ApiError } from '../api/client'
-import { STATUSES, STATUS_LABELS } from '../lib/status'
+import {
+  PRIORITIES,
+  PRIORITY_LABELS,
+  STATUSES,
+  STATUS_LABELS,
+  isOverdue,
+  parseLabels,
+} from '../lib/status'
 import { WorkflowProgress } from '../components/WorkflowProgress'
 import { ArtifactViewer } from '../components/ArtifactViewer'
 
@@ -250,6 +257,9 @@ export function IssueDetailPage() {
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [priority, setPriority] = useState('none')
+  const [labels, setLabels] = useState('')
+  const [dueDate, setDueDate] = useState('')
   const [newComment, setNewComment] = useState('')
 
   const loadIssue = useCallback(
@@ -304,12 +314,21 @@ export function IssueDetailPage() {
     if (!issue) return
     setTitle(issue.title)
     setDescription(issue.description)
+    setPriority(issue.priority || 'none')
+    setLabels((issue.labels ?? []).join(', '))
+    setDueDate(issue.due_date ? issue.due_date.slice(0, 10) : '')
     setEditing(true)
   }
 
   const onSave = () => {
     setError('')
-    updateIssue(id, issueId, { title, description })
+    updateIssue(id, issueId, {
+      title,
+      description,
+      priority,
+      labels: parseLabels(labels),
+      due_date: dueDate,
+    })
       .then((updated) => {
         setIssue(updated)
         setEditing(false)
@@ -350,6 +369,18 @@ export function IssueDetailPage() {
       )}
       <div className="issue-meta">
         <span className="badge">S{issue.stage}</span>
+        <span className="badge" data-testid="detail-priority">
+          {PRIORITY_LABELS[issue.priority] ?? issue.priority}
+        </span>
+        {issue.labels.length > 0 && (
+          <span data-testid="detail-labels">
+            {issue.labels.map((l) => (
+              <span key={l} className="badge label">
+                {l}
+              </span>
+            ))}
+          </span>
+        )}
         <select
           aria-label="状态"
           data-testid="detail-status"
@@ -366,8 +397,11 @@ export function IssueDetailPage() {
           负责人: <span data-testid="assignee">{issue.assignee_id || '未指派'}</span>
         </span>
         {issue.due_date && (
-          <span>
-            截止: <span data-testid="due-date">{issue.due_date}</span>
+          <span
+            className={isOverdue(issue.due_date, issue.status) ? 'due-date overdue' : 'due-date'}
+          >
+            截止: <span data-testid="due-date">{issue.due_date.slice(0, 10)}</span>
+            {isOverdue(issue.due_date, issue.status) && '（已逾期）'}
           </span>
         )}
         {!editing && (
@@ -389,6 +423,31 @@ export function IssueDetailPage() {
             rows={6}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+          />
+          <select
+            aria-label="优先级"
+            data-testid="edit-priority"
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+          >
+            {PRIORITIES.map((p) => (
+              <option key={p} value={p}>
+                {PRIORITY_LABELS[p]}
+              </option>
+            ))}
+          </select>
+          <input
+            data-testid="edit-labels"
+            placeholder="标签（逗号分隔）"
+            value={labels}
+            onChange={(e) => setLabels(e.target.value)}
+          />
+          <input
+            data-testid="edit-due"
+            type="date"
+            aria-label="截止日"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
           />
           <button data-testid="save-issue" onClick={onSave}>
             保存

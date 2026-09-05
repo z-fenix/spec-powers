@@ -131,6 +131,17 @@ body {
   color: #57606a;
 }
 
+.badge.label {
+  background: #ddf4ff;
+  border-color: #54aeff66;
+  color: #0969da;
+}
+
+.due-date.overdue {
+  color: #cf222e;
+  font-weight: 600;
+}
+
 .inline-form {
   display: flex;
   gap: 8px;

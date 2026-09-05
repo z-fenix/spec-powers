@@ -52,6 +52,11 @@ export function ProjectsPage() {
 
   if (projects === null && !error) return <p>加载中…</p>
 
+  // Archived projects sink to the end so active ones stay on top.
+  const sorted = [...(projects ?? [])].sort(
+    (a, b) => Number(a.archived) - Number(b.archived),
+  )
+
   return (
     <section>
       <h2>项目</h2>
@@ -83,7 +88,7 @@ export function ProjectsPage() {
       {projects && projects.length === 0 && <p>还没有项目，先创建一个。</p>}
 
       <ul className="project-list">
-        {(projects ?? []).map((p) => (
+        {sorted.map((p) => (
           <li key={p.id} className={p.archived ? 'project-item archived' : 'project-item'}>
             <div className="project-item-main">
               <Link to={`/projects/${p.id}`}>{p.name}</Link>

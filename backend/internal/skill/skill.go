@@ -99,6 +99,12 @@ func (r *Registry) Get(key string) (*Skill, bool) {
 	return s, ok
 }
 
+// Parse parses skill frontmatter + body from raw content. Used by the
+// registry for embedded skills and by remote import for downloaded ones.
+func Parse(content string) (*Skill, error) {
+	return parse(content)
+}
+
 // parse splits a skill file into frontmatter fields and the markdown body.
 // The frontmatter is a leading --- delimited block of `key: value` lines.
 func parse(content string) (*Skill, error) {

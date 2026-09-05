@@ -15,6 +15,8 @@ vi.mock('../api/client', async (importOriginal) => {
 vi.mock('../api/runs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/runs')>()
   return { ...actual, getProjectUsage: vi.fn() }
+})
+
 vi.mock('../api/properties', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/properties')>()
   return {
@@ -115,6 +117,44 @@ describe('ProjectDetailPage', () => {
         body: { type: 'github_repo', label: 'lib', pointer: 'octo/lib' },
       }),
     )
+  })
+
+  it('adds a worktree resource with branch and path', async () => {
+    mockInitialLoad()
+    const worktree = { id: 'r2', type: 'worktree', label: 'wt', pointer: '/repos/demo', branch: 'feature', path: '/repos/demo-wt' }
+    mockedFetch
+      .mockResolvedValueOnce({ resource: worktree })
+      .mockResolvedValueOnce({ resources: [worktree] })
+    renderPage()
+
+    await userEvent.click(await screen.findByTestId('add-resource'))
+    await userEvent.selectOptions(screen.getByTestId('resource-type'), 'worktree')
+    await userEvent.type(await screen.findByTestId('resource-label'), 'wt')
+    await userEvent.type(screen.getByTestId('resource-pointer'), '/repos/demo')
+    await userEvent.type(screen.getByTestId('resource-branch'), 'feature')
+    await userEvent.type(screen.getByTestId('resource-path'), '/repos/demo-wt')
+    await userEvent.click(screen.getByTestId('confirm-add-resource'))
+
+    expect(mockedFetch).toHaveBeenCalledWith(
+      '/projects/p1/resources',
+      expect.objectContaining({
+        method: 'POST',
+        body: { type: 'worktree', label: 'wt', pointer: '/repos/demo', branch: 'feature', path: '/repos/demo-wt' },
+      }),
+    )
+    expect(await screen.findByText('Worktree')).toBeInTheDocument()
+    expect(screen.getByTestId('worktree-branch-r2')).toHaveTextContent('feature → /repos/demo-wt')
+  })
+
+  it('hides worktree fields for non-worktree resource types', async () => {
+    mockInitialLoad()
+    renderPage()
+
+    await userEvent.click(await screen.findByTestId('add-resource'))
+    await userEvent.selectOptions(screen.getByTestId('resource-type'), 'github_repo')
+
+    expect(screen.queryByTestId('resource-branch')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('resource-path')).not.toBeInTheDocument()
   })
 
   it('removes a resource', async () => {

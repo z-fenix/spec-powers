@@ -35,6 +35,16 @@ type MemberStore interface {
 	ListWorkspaceIDsForUser(ctx context.Context, userID string) ([]string, error)
 }
 
+// ResourceInput carries the fields of a project resource binding. Branch
+// and Path are only meaningful for worktree bindings.
+type ResourceInput struct {
+	Type    string
+	Label   string
+	Pointer string
+	Branch  string
+	Path    string
+}
+
 // WorkspaceStatusStore is a workspace's status directory: the set of status
 // names issues may carry plus the category each maps to. A workspace with no
 // stored rows uses the built-in defaults (domain.DefaultStatusDirectory);
@@ -57,7 +67,7 @@ type ProjectStore interface {
 	ListProjectsForUser(ctx context.Context, userID string) ([]domain.Project, error)
 	AddProjectMember(ctx context.Context, projectID, userID, role string) error
 	GetProjectMember(ctx context.Context, projectID, userID string) (*domain.ProjectMember, error)
-	AddProjectResource(ctx context.Context, projectID, resourceType, label, pointer string) (*domain.ProjectResource, error)
+	AddProjectResource(ctx context.Context, projectID string, in ResourceInput) (*domain.ProjectResource, error)
 	ListProjectResources(ctx context.Context, projectID string) ([]domain.ProjectResource, error)
 	DeleteProjectResource(ctx context.Context, projectID, resourceID string) error
 	GetProjectContext(ctx context.Context, projectID string) (*domain.ProjectContext, error)

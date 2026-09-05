@@ -11,6 +11,8 @@ import (
 	"specpowers/backend/internal/domain"
 	"specpowers/backend/internal/issue"
 	"specpowers/backend/internal/llm"
+	"specpowers/backend/internal/platform"
+	"specpowers/backend/internal/project"
 	"specpowers/backend/internal/skill"
 	"specpowers/backend/internal/store"
 )
@@ -356,7 +358,8 @@ func (e *Executor) runTool(ctx context.Context, run *domain.Run, agent *domain.A
 
 // toolCheckout materializes the project's resources on disk: local
 // directories are reported as-is, github repos are cloned into the run's
-// work directory.
+// work directory, worktrees are provisioned (or reused) at their bound
+// path.
 func (e *Executor) toolCheckout(ctx context.Context, run *domain.Run, iss *domain.Issue) string {
 	resources, err := e.projects.ListProjectResources(ctx, iss.ProjectID)
 	if err != nil {
@@ -373,6 +376,12 @@ func (e *Executor) toolCheckout(ctx context.Context, run *domain.Run, iss *domai
 		switch r.Type {
 		case "local_directory":
 			results = append(results, checkedOut{Type: r.Type, Label: r.Label, Path: r.Pointer})
+		case "worktree":
+			if err := project.EnsureWorktree(r.Pointer, r.Path, r.Branch); err != nil {
+				results = append(results, checkedOut{Type: r.Type, Label: r.Label, Error: err.Error()})
+				continue
+			}
+			results = append(results, checkedOut{Type: r.Type, Label: r.Label, Path: r.Path})
 		case "github_repo":
 			dest := filepath.Join(e.workDir, run.ID, filepath.Base(r.Pointer))
 			var errMsg string
@@ -392,10 +401,13 @@ func (e *Executor) toolCheckout(ctx context.Context, run *domain.Run, iss *domai
 }
 
 func gitClone(ctx context.Context, pointer, destDir string) error {
-	url := "https://github.com/" + pointer + ".git"
-	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", url, destDir)
+	cloneURL, err := platform.GitHubProvider{}.CloneURL(pointer)
+	if err != nil {
+		return fmt.Errorf("cannot resolve clone URL for %q: %v", pointer, err)
+	}
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", cloneURL, destDir)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git clone %s: %v: %s", url, err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("git clone %s: %v: %s", cloneURL, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

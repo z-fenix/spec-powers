@@ -249,11 +249,11 @@ func TestProjectDomainIntegration(t *testing.T) {
 		t.Error("archived flag not set")
 	}
 
-	r, err := projects.AddProjectResource(ctx, p.ID, "github_repo", "main", "octo/hello")
+	r, err := projects.AddProjectResource(ctx, p.ID, store.ResourceInput{Type: "github_repo", Label: "main", Pointer: "octo/hello"})
 	if err != nil {
 		t.Fatalf("add resource: %v", err)
 	}
-	if _, err := projects.AddProjectResource(ctx, p.ID, "github_repo", "dup", "octo/hello"); err != store.ErrConflict {
+	if _, err := projects.AddProjectResource(ctx, p.ID, store.ResourceInput{Type: "github_repo", Label: "dup", Pointer: "octo/hello"}); err != store.ErrConflict {
 		t.Errorf("duplicate resource error = %v, want ErrConflict", err)
 	}
 	resources, err := projects.ListProjectResources(ctx, p.ID)

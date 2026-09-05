@@ -117,14 +117,14 @@ func (s *ProjectStore) GetProjectMember(ctx context.Context, projectID, userID s
 	return pm, nil
 }
 
-func (s *ProjectStore) AddProjectResource(ctx context.Context, projectID, resourceType, label, pointer string) (*domain.ProjectResource, error) {
+func (s *ProjectStore) AddProjectResource(ctx context.Context, projectID string, in store.ResourceInput) (*domain.ProjectResource, error) {
 	r := &domain.ProjectResource{}
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO project_resources (project_id, type, label, pointer)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, project_id, type, label, pointer, created_at`,
-		projectID, resourceType, label, pointer,
-	).Scan(&r.ID, &r.ProjectID, &r.Type, &r.Label, &r.Pointer, &r.CreatedAt)
+		INSERT INTO project_resources (project_id, type, label, pointer, branch, path)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, project_id, type, label, pointer, branch, path, created_at`,
+		projectID, in.Type, in.Label, in.Pointer, in.Branch, in.Path,
+	).Scan(&r.ID, &r.ProjectID, &r.Type, &r.Label, &r.Pointer, &r.Branch, &r.Path, &r.CreatedAt)
 	if IsConflict(err) {
 		return nil, store.ErrConflict
 	}
@@ -136,7 +136,7 @@ func (s *ProjectStore) AddProjectResource(ctx context.Context, projectID, resour
 
 func (s *ProjectStore) ListProjectResources(ctx context.Context, projectID string) ([]domain.ProjectResource, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, project_id, type, label, pointer, created_at
+		SELECT id, project_id, type, label, pointer, branch, path, created_at
 		FROM project_resources WHERE project_id = $1
 		ORDER BY created_at`, projectID)
 	if err != nil {
@@ -146,7 +146,7 @@ func (s *ProjectStore) ListProjectResources(ctx context.Context, projectID strin
 	var list []domain.ProjectResource
 	for rows.Next() {
 		var r domain.ProjectResource
-		if err := rows.Scan(&r.ID, &r.ProjectID, &r.Type, &r.Label, &r.Pointer, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.ProjectID, &r.Type, &r.Label, &r.Pointer, &r.Branch, &r.Path, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan project resource: %w", err)
 		}
 		list = append(list, r)

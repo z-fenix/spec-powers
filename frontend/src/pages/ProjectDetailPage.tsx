@@ -17,6 +17,14 @@ interface Resource {
   type: string
   label: string
   pointer: string
+  branch?: string
+  path?: string
+}
+
+const RESOURCE_TYPE_LABELS: Record<string, string> = {
+  github_repo: 'GitHub 仓库',
+  local_directory: '本地目录',
+  worktree: 'Worktree',
 }
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -132,6 +140,8 @@ export function ProjectDetailPage() {
   const [resourceType, setResourceType] = useState('github_repo')
   const [label, setLabel] = useState('')
   const [pointer, setPointer] = useState('')
+  const [branch, setBranch] = useState('')
+  const [worktreePath, setWorktreePath] = useState('')
   const [showResource, setShowResource] = useState(false)
 
   const load = useCallback(() => {
@@ -160,13 +170,22 @@ export function ProjectDetailPage() {
   const onAddResource = (e: FormEvent) => {
     e.preventDefault()
     setResourceError('')
+    const isWorktree = resourceType === 'worktree'
     apiFetch<{ resource: Resource }>(`/projects/${id}/resources`, {
       method: 'POST',
-      body: { type: resourceType, label, pointer },
+      body: {
+        type: resourceType,
+        label,
+        pointer,
+        branch: isWorktree ? branch : undefined,
+        path: isWorktree ? worktreePath : undefined,
+      },
     })
       .then(() => {
         setLabel('')
         setPointer('')
+        setBranch('')
+        setWorktreePath('')
         setShowResource(false)
         return apiFetch<{ resources: Resource[] }>(`/projects/${id}/resources`)
       })
@@ -254,10 +273,15 @@ export function ProjectDetailPage() {
             <ul className="project-list">
               {resources.map((r) => (
                 <li key={r.id} className="collection-row">
-                  <span className="badge">{r.type === 'github_repo' ? 'GitHub 仓库' : '本地目录'}</span>
+                  <span className="badge">{RESOURCE_TYPE_LABELS[r.type] ?? r.type}</span>
                   <div className="collection-row-main">
                     <strong>{r.label}</strong>
                     <code>{r.pointer}</code>
+                    {r.type === 'worktree' && r.branch && (
+                      <code data-testid={`worktree-branch-${r.id}`}>
+                        {r.branch} → {r.path}
+                      </code>
+                    )}
                   </div>
                   <button
                     className="btn btn-ghost btn-sm"
@@ -288,9 +312,8 @@ export function ProjectDetailPage() {
               </button>
             </div>
           </div>
-          <div className="detail-section">
-            <PropertyDefinitionsPanel projectId={id} />
-          </div>
+
+          <PropertyDefinitionsPanel projectId={id} />
         </div>
       </div>
       {showResource && (
@@ -309,6 +332,7 @@ export function ProjectDetailPage() {
               >
                 <option value="github_repo">GitHub 仓库</option>
                 <option value="local_directory">本地目录</option>
+                <option value="worktree">Worktree</option>
               </select>
             </label>
             <label>
@@ -328,12 +352,40 @@ export function ProjectDetailPage() {
               <input
                 className="input"
                 data-testid="resource-pointer"
-                placeholder={resourceType === 'github_repo' ? 'owner/repo' : '绝对路径'}
+                placeholder={
+                  resourceType === 'worktree' ? '基础仓库目录（绝对路径）' : resourceType === 'github_repo' ? 'owner/repo' : '绝对路径'
+                }
                 value={pointer}
                 onChange={(e) => setPointer(e.target.value)}
                 required
               />
             </label>
+            {resourceType === 'worktree' && (
+              <>
+                <label>
+                  分支
+                  <input
+                    className="input"
+                    data-testid="resource-branch"
+                    placeholder="worktree 分支"
+                    value={branch}
+                    onChange={(e) => setBranch(e.target.value)}
+                    required
+                  />
+                </label>
+                <label>
+                  Worktree 路径
+                  <input
+                    className="input"
+                    data-testid="resource-path"
+                    placeholder="worktree 存放路径（绝对路径，不存在时创建）"
+                    value={worktreePath}
+                    onChange={(e) => setWorktreePath(e.target.value)}
+                    required
+                  />
+                </label>
+              </>
+            )}
             {resourceError && (
               <p role="alert" style={{ margin: 0, color: 'var(--destructive)', fontSize: 'var(--text-body)' }}>
                 {resourceError}

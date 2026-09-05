@@ -59,10 +59,12 @@ type resourceDTO struct {
 	Type    string `json:"type"`
 	Label   string `json:"label"`
 	Pointer string `json:"pointer"`
+	Branch  string `json:"branch"`
+	Path    string `json:"path"`
 }
 
 func toResourceDTO(r *domain.ProjectResource) resourceDTO {
-	return resourceDTO{ID: r.ID, Type: r.Type, Label: r.Label, Pointer: r.Pointer}
+	return resourceDTO{ID: r.ID, Type: r.Type, Label: r.Label, Pointer: r.Pointer, Branch: r.Branch, Path: r.Path}
 }
 
 // requireRole is the project-level permission middleware: every route under
@@ -219,12 +221,20 @@ func (h *Handler) addResource(w http.ResponseWriter, r *http.Request) {
 		Type    string `json:"type"`
 		Label   string `json:"label"`
 		Pointer string `json:"pointer"`
+		Branch  string `json:"branch"`
+		Path    string `json:"path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpapi.Error(w, httpapi.ErrInvalid("malformed JSON body"))
 		return
 	}
-	res, err := h.svc.AddResource(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "projectID"), req.Type, req.Label, req.Pointer)
+	res, err := h.svc.AddResource(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "projectID"), AddResourceInput{
+		Type:    req.Type,
+		Label:   req.Label,
+		Pointer: req.Pointer,
+		Branch:  req.Branch,
+		Path:    req.Path,
+	})
 	if err != nil {
 		writeAppError(w, err)
 		return

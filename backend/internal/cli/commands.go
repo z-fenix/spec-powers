@@ -767,19 +767,28 @@ func cmdSkillInstall(args []string, stdout, stderr io.Writer) int {
 	dirFlag := fs.String("dir", "", "target skills directory (default ~/.claude/skills)")
 	agent := fs.String("agent", "claude-code", "target agent type: claude-code or generic")
 	force := fs.Bool("force", false, "overwrite installed skills of the same name")
+	from := fs.String("from", "", "import from a URL or local archive (SKILL.md, .tar.gz or .zip) instead of the embedded registry")
 	keys, err := collectPositionals(fs, args)
 	if err != nil {
 		return 2
+	}
+	if *from != "" && len(keys) > 0 {
+		return e.fail(2, fmt.Errorf("skill keys cannot be combined with --from (the source names its own skills)"))
 	}
 	dir, err := resolveSkillsDir(*agent, *dirFlag)
 	if err != nil {
 		return e.fail(2, err)
 	}
-	skills, err := targetSkills(keys)
-	if err != nil {
-		return e.fail(1, err)
+	var installed []string
+	if *from != "" {
+		installed, err = skill.ImportSkills(dir, *from, *force)
+	} else {
+		var skills []*skill.Skill
+		skills, err = targetSkills(keys)
+		if err == nil {
+			installed, err = skill.InstallSkills(dir, skills, *force)
+		}
 	}
-	installed, err := skill.InstallSkills(dir, skills, *force)
 	if err != nil {
 		return e.fail(1, err)
 	}

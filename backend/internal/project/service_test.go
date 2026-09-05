@@ -174,6 +174,13 @@ func (f *fakeWorkspaces) CreateWorkspace(_ context.Context, name, createdBy stri
 	return &domain.Workspace{ID: "ws-1", Name: name, CreatedBy: createdBy}, nil
 }
 
+func (f *fakeWorkspaces) GetWorkspace(_ context.Context, id string) (*domain.Workspace, error) {
+	if id == "ws-1" {
+		return &domain.Workspace{ID: "ws-1"}, nil
+	}
+	return nil, store.ErrNotFound
+}
+
 type fakeMembers struct {
 	added []string
 	have  map[string]bool // "ws|user"
@@ -196,6 +203,14 @@ func (f *fakeMembers) ListWorkspaceIDsForUser(_ context.Context, userID string) 
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeMembers) ListMembers(_ context.Context, workspaceID string) ([]domain.Member, error) {
+	return nil, nil
+}
+
+func (f *fakeMembers) CountMembersByRole(_ context.Context, workspaceID string, roleID int) (int, error) {
+	return 0, nil
 }
 
 func newTestService() (*Service, *fakeProjects, *fakeWorkspaces) {

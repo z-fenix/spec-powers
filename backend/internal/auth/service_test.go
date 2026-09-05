@@ -67,6 +67,15 @@ func (f *fakeWorkspaceStore) CreateWorkspace(_ context.Context, name, createdBy 
 	return f.created[len(f.created)-1], nil
 }
 
+func (f *fakeWorkspaceStore) GetWorkspace(_ context.Context, id string) (*domain.Workspace, error) {
+	for _, w := range f.created {
+		if w.ID == id {
+			return w, nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
 type fakeMemberStore struct {
 	members []string // "ws|user|role"
 }
@@ -85,6 +94,21 @@ func (f *fakeMemberStore) ListWorkspaceIDsForUser(_ context.Context, userID stri
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeMemberStore) ListMembers(_ context.Context, workspaceID string) ([]domain.Member, error) {
+	var out []domain.Member
+	for _, m := range f.members {
+		parts := strings.Split(m, "|")
+		if parts[0] == workspaceID {
+			out = append(out, domain.Member{WorkspaceID: parts[0], UserID: parts[1]})
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeMemberStore) CountMembersByRole(_ context.Context, workspaceID string, roleID int) (int, error) {
+	return 0, nil
 }
 
 func newTestService() (*Service, *fakeUserStore, *fakeWorkspaceStore, *fakeMemberStore) {

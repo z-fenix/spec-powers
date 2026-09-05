@@ -20,6 +20,12 @@ const (
 	RoleMember = 2
 )
 
+// Role names as exposed by the API and stored in the roles table.
+const (
+	RoleNameOwner  = "owner"
+	RoleNameMember = "member"
+)
+
 type UserStore interface {
 	CreateUser(ctx context.Context, email, passwordHash, displayName string) (*domain.User, error)
 	GetUserByEmail(ctx context.Context, email string) (*domain.User, error)
@@ -28,11 +34,48 @@ type UserStore interface {
 
 type WorkspaceStore interface {
 	CreateWorkspace(ctx context.Context, name, createdBy string) (*domain.Workspace, error)
+	GetWorkspace(ctx context.Context, id string) (*domain.Workspace, error)
 }
 
 type MemberStore interface {
 	AddMember(ctx context.Context, workspaceID, userID string, roleID int) error
 	ListWorkspaceIDsForUser(ctx context.Context, userID string) ([]string, error)
+	// ListMembers returns the workspace's members ordered by joined_at.
+	ListMembers(ctx context.Context, workspaceID string) ([]domain.Member, error)
+	// CountMembersByRole returns how many members hold the role; used for
+	// last-owner protection on role changes.
+	CountMembersByRole(ctx context.Context, workspaceID string, roleID int) (int, error)
+}
+
+// InviteStore manages pending workspace invitations. Status transitions go
+// through SetInviteStatus ("accepted" / "revoked").
+type InviteStore interface {
+	CreateInvite(ctx context.Context, i *domain.WorkspaceInvite) (*domain.WorkspaceInvite, error)
+	// ListInvites returns the workspace's pending invites, newest first.
+	ListInvites(ctx context.Context, workspaceID string) ([]domain.WorkspaceInvite, error)
+	// GetInviteByCode resolves one invitation by its redeem code;
+	// ErrNotFound when the code is unknown.
+	GetInviteByCode(ctx context.Context, code string) (*domain.WorkspaceInvite, error)
+	// SetInviteStatus moves a pending invite of the given workspace to
+	// accepted or revoked; ErrNotFound when the invite does not exist in
+	// that workspace or is not pending.
+	SetInviteStatus(ctx context.Context, workspaceID, id, status string, acceptedAt *time.Time) (*domain.WorkspaceInvite, error)
+}
+
+// APITokenStore persists personal API tokens. Only the sha256 hash is
+// stored; the plaintext exists solely in the issue response.
+type APITokenStore interface {
+	CreateAPIToken(ctx context.Context, t *domain.APIToken) (*domain.APIToken, error)
+	ListAPITokens(ctx context.Context, userID string) ([]domain.APIToken, error)
+	// GetAPITokenByHash resolves a credential by its hash; ErrNotFound when
+	// unknown. Used by bearer-token verification.
+	GetAPITokenByHash(ctx context.Context, hash string) (*domain.APIToken, error)
+	// RevokeAPIToken stamps revoked_at on the user's active token;
+	// ErrNotFound when the token does not exist, belongs to someone else,
+	// or is already revoked.
+	RevokeAPIToken(ctx context.Context, userID, id string) (*domain.APIToken, error)
+	// TouchAPIToken updates last_used_at after a successful verification.
+	TouchAPIToken(ctx context.Context, id string, at time.Time) error
 }
 
 type ProjectStore interface {

@@ -25,6 +25,20 @@ function IconHamburger() {
   )
 }
 
+function IconGear() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="8" cy="8" r="2.25" stroke="currentColor" strokeWidth="1.3" />
+      <path
+        d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 function ThemeIcon({ resolved }: { resolved: 'light' | 'dark' }) {
   if (resolved === 'dark') {
     return (
@@ -89,6 +103,10 @@ export function Layout() {
             <NavLink to="/" end className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
               <IconFolder />
               项目
+            </NavLink>
+            <NavLink to="/settings" className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')} data-testid="nav-settings">
+              <IconGear />
+              设置
             </NavLink>
             <NotificationBell />
           </nav>

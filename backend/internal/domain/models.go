@@ -238,3 +238,31 @@ type Notification struct {
 	ReadAt    *time.Time
 	CreatedAt time.Time
 }
+
+// WorkspaceInvite is a pending invitation to join a workspace, created for
+// an email that is not registered yet. The holder registers with that email
+// and redeems Code to join with the invited role.
+type WorkspaceInvite struct {
+	ID          string
+	WorkspaceID string
+	Email       string
+	RoleID      int
+	Code        string
+	InvitedBy   string
+	Status      string // pending | accepted | revoked
+	CreatedAt   time.Time
+	AcceptedAt  *time.Time
+}
+
+// APIToken is a personal credential for API/CLI access. Only TokenHash is
+// stored; the plaintext is shown once at issue time.
+type APIToken struct {
+	ID         string
+	UserID     string
+	Name       string
+	TokenHash  string
+	Prefix     string
+	CreatedAt  time.Time
+	LastUsedAt *time.Time
+	RevokedAt  *time.Time
+}

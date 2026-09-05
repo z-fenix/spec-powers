@@ -15,24 +15,33 @@ type AppError struct {
 
 func (e *AppError) Error() string { return e.Code + ": " + e.Message }
 
-func ErrInvalid(msg string) *AppError    { return &AppError{Status: 400, Code: "invalid_request", Message: msg} }
-func ErrUnauthorized(msg string) *AppError { return &AppError{Status: 401, Code: "unauthorized", Message: msg} }
-func ErrForbidden(msg string) *AppError  { return &AppError{Status: 403, Code: "forbidden", Message: msg} }
-func ErrNotFound(msg string) *AppError   { return &AppError{Status: 404, Code: "not_found", Message: msg} }
-func ErrConflict(msg string) *AppError   { return &AppError{Status: 409, Code: "conflict", Message: msg} }
-func ErrInternal(msg string) *AppError   { return &AppError{Status: 500, Code: "internal", Message: msg} }
+func ErrInvalid(msg string) *AppError {
+	return &AppError{Status: 400, Code: "invalid_request", Message: msg}
+}
+func ErrUnauthorized(msg string) *AppError {
+	return &AppError{Status: 401, Code: "unauthorized", Message: msg}
+}
+func ErrForbidden(msg string) *AppError {
+	return &AppError{Status: 403, Code: "forbidden", Message: msg}
+}
+func ErrNotFound(msg string) *AppError {
+	return &AppError{Status: 404, Code: "not_found", Message: msg}
+}
+func ErrConflict(msg string) *AppError { return &AppError{Status: 409, Code: "conflict", Message: msg} }
+func ErrInternal(msg string) *AppError { return &AppError{Status: 500, Code: "internal", Message: msg} }
 
 // Deps carries the handler bundles wired into the router. Nil bundles are
 // skipped so the skeleton stays testable before auth/project handlers land.
 type Deps struct {
-	Auth    http.Handler
-	Project http.Handler
-	Changes http.Handler
-	Skills  http.Handler
-	Agents  http.Handler
-	Runs    http.Handler
-	Notifs  http.Handler
-	Runtime http.Handler
+	Auth      http.Handler
+	Project   http.Handler
+	Changes   http.Handler
+	Skills    http.Handler
+	Agents    http.Handler
+	Runs      http.Handler
+	Notifs    http.Handler
+	Runtime   http.Handler
+	Workspace http.Handler
 	// Static serves the SPA frontend at the root when set; API routes keep
 	// precedence.
 	Static http.Handler
@@ -70,6 +79,9 @@ func NewRouter(deps Deps) http.Handler {
 		}
 		if deps.Runtime != nil {
 			r.Mount("/runtime", http.StripPrefix("/api/v1/runtime", deps.Runtime))
+		}
+		if deps.Workspace != nil {
+			r.Mount("/workspace", http.StripPrefix("/api/v1/workspace", deps.Workspace))
 		}
 		r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 			Error(w, ErrNotFound("route not found"))

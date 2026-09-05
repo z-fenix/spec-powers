@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -93,6 +94,40 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, *d
 
 func (s *Service) TokenService() *TokenService { return s.tokens }
 
+// IssueAPIToken creates a personal API token for the caller. The plaintext
+// is returned exactly once.
+func (s *Service) IssueAPIToken(ctx context.Context, userID, name string) (string, *domain.APIToken, error) {
+	if strings.TrimSpace(name) == "" {
+		return "", nil, ErrInvalid("token name is required")
+	}
+	plaintext, tok, err := s.tokens.IssueAPIToken(ctx, userID, strings.TrimSpace(name))
+	if err != nil {
+		return "", nil, httpapi.ErrInternal("issue api token failed")
+	}
+	return plaintext, tok, nil
+}
+
+// ListAPITokens returns the caller's tokens (hashed, never plaintext).
+func (s *Service) ListAPITokens(ctx context.Context, userID string) ([]domain.APIToken, error) {
+	tokens, err := s.tokens.ListAPITokens(ctx, userID)
+	if err != nil {
+		return nil, httpapi.ErrInternal("list api tokens failed")
+	}
+	return tokens, nil
+}
+
+// RevokeAPIToken stamps revoked_at on one of the caller's tokens.
+func (s *Service) RevokeAPIToken(ctx context.Context, userID, tokenID string) (*domain.APIToken, error) {
+	tok, err := s.tokens.RevokeAPIToken(ctx, userID, tokenID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, httpapi.ErrNotFound("token not found")
+	}
+	if err != nil {
+		return nil, httpapi.ErrInternal("revoke api token failed")
+	}
+	return tok, nil
+}
+
 func (s *Service) User(ctx context.Context, id string) (*domain.User, error) {
 	user, err := s.users.GetUser(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
@@ -105,7 +140,9 @@ func (s *Service) User(ctx context.Context, id string) (*domain.User, error) {
 	return user, nil
 }
 
-func ErrInvalid(msg string) *httpapi.AppError { return &httpapi.AppError{Status: 400, Code: "invalid_request", Message: msg} }
+func ErrInvalid(msg string) *httpapi.AppError {
+	return &httpapi.AppError{Status: 400, Code: "invalid_request", Message: msg}
+}
 func ErrUnauthorized(msg string) *httpapi.AppError {
 	return &httpapi.AppError{Status: 401, Code: "unauthorized", Message: msg}
 }

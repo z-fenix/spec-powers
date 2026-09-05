@@ -79,13 +79,16 @@ export function NotificationsPage() {
   if (notifications === null) return <p>加载中…</p>
 
   return (
-    <section data-testid="notifications-page">
-      <h2>
-        收件箱{' '}
-        <span data-testid="unread-count" className="badge">
-          {unread}
-        </span>
-      </h2>
+    <div className="page" data-testid="notifications-page">
+      <div className="page-header">
+        <h1 className="page-title">
+          收件箱{' '}
+          <span data-testid="unread-count" className="badge">
+            {unread}
+          </span>
+        </h1>
+      </div>
+      <div className="page-body">
       <div className="inbox-tabs" role="tablist">
         <button
           role="tab"
@@ -150,6 +153,7 @@ export function NotificationsPage() {
           ))}
         </ul>
       )}
-    </section>
+    </div>
+    </div>
   )
 }

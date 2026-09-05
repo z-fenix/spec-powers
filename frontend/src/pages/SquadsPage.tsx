@@ -108,8 +108,11 @@ export function SquadsPage() {
   if (squads === null) return <p>加载中…</p>
 
   return (
-    <section data-testid="squads-page">
-      <h2>小组</h2>
+    <div className="page" data-testid="squads-page">
+      <div className="page-header">
+        <h1 className="page-title">小组</h1>
+      </div>
+      <div className="page-body">
       {error && (
         <p role="alert" data-testid="squads-error">
           {error}
@@ -220,6 +223,7 @@ export function SquadsPage() {
           )
         })}
       </ul>
-    </section>
+    </div>
+    </div>
   )
 }

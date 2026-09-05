@@ -2,9 +2,9 @@ package agent
 
 import (
 	"context"
-	"strings"
 
 	"specpowers/backend/internal/domain"
+	"specpowers/backend/internal/notification"
 	"specpowers/backend/internal/store"
 )
 
@@ -44,33 +44,8 @@ func (t *MentionTrigger) OnComment(ctx context.Context, issueID, authorID, conte
 }
 
 // mentionsAgent reports whether content mentions the agent as @<name>
-// (case-insensitive).
+// (case-insensitive); the syntax is shared with human mention
+// notifications.
 func mentionsAgent(content, name string) bool {
-	if strings.TrimSpace(name) == "" {
-		return false
-	}
-	idx := 0
-	for {
-		at := strings.Index(content[idx:], "@")
-		if at < 0 {
-			return false
-		}
-		at += idx
-		rest := content[at+1:]
-		if len(rest) >= len(name) && strings.EqualFold(rest[:len(name)], name) {
-			// The character after the name must not extend it into a
-			// different word (e.g. @KunCodingX must not match KunCoding).
-			after := rest[len(name):]
-			if after == "" || !isNameByte(after[0]) {
-				return true
-			}
-		}
-		idx = at + 1
-	}
-}
-
-func isNameByte(b byte) bool {
-	return b == '_' || b == '-' ||
-		(b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') ||
-		b >= 0x80 // treat multibyte (e.g. CJK names) as part of the token
+	return notification.MentionsName(content, name)
 }

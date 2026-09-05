@@ -236,16 +236,16 @@ type scriptedLLM struct {
 	err       error
 }
 
-func (s *scriptedLLM) Complete(_ context.Context, _, _ string) (string, error) {
+func (s *scriptedLLM) Complete(_ context.Context, _, _ string) (llm.Completion, error) {
 	if s.err != nil {
-		return "", s.err
+		return llm.Completion{}, s.err
 	}
 	if len(s.responses) == 0 {
-		return "", fmt.Errorf("scriptedLLM: no responses")
+		return llm.Completion{}, fmt.Errorf("scriptedLLM: no responses")
 	}
 	resp := s.responses[0]
 	if len(s.responses) > 1 {
 		s.responses = s.responses[1:]
 	}
-	return resp, nil
+	return llm.Completion{Text: resp}, nil
 }

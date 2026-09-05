@@ -93,7 +93,7 @@ export function ProjectsPage() {
       </div>
       <div className="page-body">
         <div className="page-gutter">
-          {error && (
+          {error && !showCreate && (
             <p role="alert" data-testid="projects-error">
               {error}
             </p>
@@ -118,7 +118,11 @@ export function ProjectsPage() {
         </div>
       </div>
       {showCreate && (
-        <Modal title="新建项目" onClose={() => setShowCreate(false)}>
+        <Modal
+          title="创建项目"
+          description="为工作区新建一个项目。"
+          onClose={() => setShowCreate(false)}
+        >
           <form onSubmit={onCreate}>
             <label>
               名称
@@ -142,6 +146,11 @@ export function ProjectsPage() {
                 onChange={(e) => setDescription(e.target.value)}
               />
             </label>
+            {error && (
+              <p role="alert" style={{ margin: 0, color: 'var(--destructive)', fontSize: 'var(--text-body)' }}>
+                {error}
+              </p>
+            )}
             <div className="modal-actions">
               <button type="button" className="btn btn-outline" onClick={() => setShowCreate(false)}>
                 取消

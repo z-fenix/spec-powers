@@ -26,13 +26,16 @@ func (f *fakeStore) CreateNotification(_ context.Context, n *domain.Notification
 	return &out, nil
 }
 
-func (f *fakeStore) ListNotifications(_ context.Context, userID string, unreadOnly bool) ([]domain.Notification, error) {
+func (f *fakeStore) ListNotifications(_ context.Context, userID string, unreadOnly bool, kind string) ([]domain.Notification, error) {
 	var out []domain.Notification
 	for _, n := range f.created {
 		if n.UserID != userID {
 			continue
 		}
 		if unreadOnly && n.ReadAt != nil {
+			continue
+		}
+		if kind != "" && n.Kind != kind {
 			continue
 		}
 		out = append([]domain.Notification{n}, out...)
@@ -129,7 +132,7 @@ func (brokenStore) CreateNotification(context.Context, *domain.Notification) (*d
 	return nil, errors.New("db down")
 }
 
-func (brokenStore) ListNotifications(context.Context, string, bool) ([]domain.Notification, error) {
+func (brokenStore) ListNotifications(context.Context, string, bool, string) ([]domain.Notification, error) {
 	return nil, nil
 }
 
@@ -152,7 +155,7 @@ func TestListReturnsNewestFirstForUser(t *testing.T) {
 	s.Notify(context.Background(), NotifyInput{UserID: "u2", Kind: "comment", Title: "other user"})
 	s.Notify(context.Background(), NotifyInput{UserID: "u1", Kind: "run_finished", Title: "second"})
 
-	list, err := s.List(context.Background(), "u1", false)
+	list, err := s.List(context.Background(), "u1", false, "")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -173,12 +176,33 @@ func TestListUnreadOnly(t *testing.T) {
 		t.Fatalf("mark read: %v", err)
 	}
 
-	list, err := s.List(context.Background(), "u1", true)
+	list, err := s.List(context.Background(), "u1", true, "")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
 	if len(list) != 1 || list[0].Title != "a" {
 		t.Fatalf("unread list: %+v", list)
+	}
+}
+
+func TestListFiltersByKind(t *testing.T) {
+	f := &fakeStore{}
+	s := NewService(f)
+	s.Notify(context.Background(), NotifyInput{UserID: "u1", Kind: "comment", Title: "c"})
+	s.Notify(context.Background(), NotifyInput{UserID: "u1", Kind: "mention", Title: "m"})
+	s.Notify(context.Background(), NotifyInput{UserID: "u1", Kind: "due", Title: "d"})
+
+	list, err := s.List(context.Background(), "u1", false, "mention")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 1 || list[0].Kind != "mention" {
+		t.Fatalf("kind filter: %+v", list)
+	}
+
+	all, err := s.List(context.Background(), "u1", false, "")
+	if err != nil || len(all) != 3 {
+		t.Fatalf("empty kind means all: %d, %v", len(all), err)
 	}
 }
 

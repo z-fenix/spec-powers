@@ -101,6 +101,39 @@ func TestHandlerList(t *testing.T) {
 	}
 }
 
+func TestHandlerKindFilter(t *testing.T) {
+	f := &fakeStore{}
+	svc := NewService(f)
+	svc.Notify(context.Background(), NotifyInput{UserID: "u1", Kind: "comment", Title: "c"})
+	svc.Notify(context.Background(), NotifyInput{UserID: "u1", Kind: "mention", Title: "m"})
+	svc.Notify(context.Background(), NotifyInput{UserID: "u1", Kind: "due", Title: "d"})
+
+	tokens := auth.NewTokenService("notification-test-secret", 15*time.Minute)
+	r := chi.NewRouter()
+	r.Mount("/api/v1/notifications", NewHandler(svc, tokens).Routes())
+
+	code, body := doRequest(t, r, tokens, http.MethodGet, "/api/v1/notifications?kind=mention", "u1")
+	if code != http.StatusOK {
+		t.Fatalf("kind list: got %d", code)
+	}
+	list := body["notifications"].([]any)
+	if len(list) != 1 || list[0].(map[string]any)["kind"] != "mention" {
+		t.Fatalf("kind filter returned: %v", list)
+	}
+	// The unread badge is kind-independent.
+	if body["unread"].(float64) != 3 {
+		t.Fatalf("unread count: %v", body["unread"])
+	}
+
+	code, body = doRequest(t, r, tokens, http.MethodGet, "/api/v1/notifications?kind=mention&unread=true", "u1")
+	if code != http.StatusOK {
+		t.Fatalf("kind+unread list: got %d", code)
+	}
+	if len(body["notifications"].([]any)) != 1 {
+		t.Fatalf("kind+unread filter returned: %v", body)
+	}
+}
+
 func TestHandlerMarkAllRead(t *testing.T) {
 	f := &fakeStore{}
 	svc := NewService(f)

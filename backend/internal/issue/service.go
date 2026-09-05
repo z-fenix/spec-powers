@@ -3,6 +3,8 @@ package issue
 import (
 	"context"
 	"log"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +30,8 @@ type Service struct {
 	trigger     RunTrigger
 	subscribers store.SubscriberStore
 	notifier    notification.Sink
+	// events records the issue timeline; nil disables event recording.
+	events store.IssueEventStore
 }
 
 func NewService(issues store.IssueStore, projects store.ProjectStore, users store.UserStore) *Service {
@@ -53,6 +57,30 @@ func (s *Service) WithSubscribers(sub store.SubscriberStore) *Service {
 func (s *Service) WithNotifier(n notification.Sink) *Service {
 	s.notifier = n
 	return s
+// WithEventStore installs the timeline event store; issue creation, field
+// updates and status transitions then append events.
+func (s *Service) WithEventStore(e store.IssueEventStore) *Service {
+	s.events = e
+	return s
+}
+
+// recordEvent appends one timeline event. Recording failures fail the
+// calling operation so the timeline never silently diverges from state.
+func (s *Service) recordEvent(ctx context.Context, issueID, actorID, field, oldValue, newValue string) error {
+	if s.events == nil {
+		return nil
+	}
+	_, err := s.events.CreateIssueEvent(ctx, &domain.IssueEvent{
+		IssueID:  issueID,
+		ActorID:  actorID,
+		Field:    field,
+		OldValue: oldValue,
+		NewValue: newValue,
+	})
+	if err != nil {
+		return httpapi.ErrInternal("record issue event failed")
+	}
+	return nil
 }
 
 type CreateInput struct {
@@ -187,6 +215,11 @@ func (s *Service) CreateIssue(ctx context.Context, userID, projectID string, in 
 	if s.subscribers != nil {
 		if err := s.subscribers.AddIssueSubscriber(ctx, created.ID, userID); err != nil {
 			log.Printf("issue: subscribe creator failed: %v", err)
+	if err := s.recordEvent(ctx, created.ID, userID, "created", "", created.Title); err != nil {
+		return nil, err
+	if s.trigger != nil && in.AssigneeID != "" {
+		if err := s.trigger.OnIssueAssigned(ctx, created); err != nil {
+			return nil, httpapi.ErrInternal("notify assignment failed")
 		}
 	}
 	return created, nil
@@ -256,12 +289,89 @@ func (s *Service) UpdateIssue(ctx context.Context, userID, issueID string, in Up
 	if err != nil {
 		return nil, httpapi.ErrInternal("update issue failed")
 	}
+	if err := s.recordFieldEvents(ctx, userID, current, saved, in); err != nil {
+		return nil, err
+	}
 	if s.trigger != nil && in.AssigneeID != nil && *in.AssigneeID != "" && *in.AssigneeID != current.AssigneeID {
 		if err := s.trigger.OnIssueAssigned(ctx, saved); err != nil {
 			return nil, httpapi.ErrInternal("notify assignment failed")
 		}
 	}
 	return saved, nil
+}
+
+// recordFieldEvents appends one event per changed tracked field. Values are
+// stored in their display form; empty means unset.
+func (s *Service) recordFieldEvents(ctx context.Context, userID string, before, after *domain.Issue, in UpdateInput) error {
+	if s.events == nil {
+		return nil
+	}
+	type change struct{ field, oldV, newV string }
+	var changes []change
+	if in.Title != nil && before.Title != after.Title {
+		changes = append(changes, change{"title", before.Title, after.Title})
+	}
+	if in.Description != nil && before.Description != after.Description {
+		changes = append(changes, change{"description", before.Description, after.Description})
+	}
+	if in.Priority != nil && before.Priority != after.Priority {
+		changes = append(changes, change{"priority", before.Priority, after.Priority})
+	}
+	if in.AssigneeID != nil && before.AssigneeID != after.AssigneeID {
+		changes = append(changes, change{"assignee", before.AssigneeID, after.AssigneeID})
+	}
+	if in.DueDate != nil && !dueEqual(before.DueDate, after.DueDate) {
+		changes = append(changes, change{"due_date", formatDue(before.DueDate), formatDue(after.DueDate)})
+	}
+	if in.Labels != nil && !slices.Equal(before.Labels, after.Labels) {
+		changes = append(changes, change{"labels", strings.Join(before.Labels, ","), strings.Join(after.Labels, ",")})
+	}
+	if in.Stage != nil && before.Stage != after.Stage {
+		changes = append(changes, change{"stage", strconv.Itoa(before.Stage), strconv.Itoa(after.Stage)})
+	}
+	if in.ParentID != nil && before.ParentID != after.ParentID {
+		changes = append(changes, change{"parent", before.ParentID, after.ParentID})
+	}
+	// Position changes are pure kanban ordering, not tracked field history.
+	for _, c := range changes {
+		if err := s.recordEvent(ctx, after.ID, userID, c.field, c.oldV, c.newV); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func dueEqual(a, b *time.Time) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Equal(*b)
+}
+
+func formatDue(d *time.Time) string {
+	if d == nil {
+		return ""
+	}
+	return d.Format("2006-01-02")
+}
+
+// GetIssueTimeline returns the issue's events, oldest first.
+func (s *Service) GetIssueTimeline(ctx context.Context, userID, issueID string) ([]domain.IssueEvent, error) {
+	i, err := s.requireProjectIssue(ctx, userID, issueID)
+	if err != nil {
+		return nil, err
+	}
+	if s.events == nil {
+		return nil, nil
+	}
+	list, err := s.events.ListIssueEvents(ctx, i.ID)
+	if err != nil {
+		return nil, httpapi.ErrInternal("list issue events failed")
+	}
+	return list, nil
 }
 
 // validateNewParent checks a parent move: parent must exist in the same
@@ -347,10 +457,14 @@ func (s *Service) TransitionStatus(ctx context.Context, userID, issueID, to stri
 		return nil, err
 	}
 	from := current.Status
+	oldStatus := current.Status
 	current.Status = to
 	saved, err := s.issues.UpdateIssue(ctx, current)
 	if err != nil {
 		return nil, httpapi.ErrInternal("update issue failed")
+	}
+	if err := s.recordEvent(ctx, saved.ID, userID, "status", oldStatus, to); err != nil {
+		return nil, err
 	}
 	if err := s.wakeParentIfChildrenTerminal(ctx, saved); err != nil {
 		return nil, err

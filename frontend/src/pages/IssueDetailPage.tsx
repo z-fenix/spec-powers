@@ -8,6 +8,7 @@ import {
   listAttachments,
   listChildren,
   listComments,
+  listIssueEvents,
   listMetadata,
   setMetadata,
   transitionIssue,
@@ -16,8 +17,10 @@ import {
   type Attachment,
   type Issue,
   type IssueComment,
+  type IssueEvent,
   type MetadataEntry,
 } from '../api/issues'
+import { listAgents } from '../api/agents'
 import { ApiError } from '../api/client'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
 import {
@@ -29,8 +32,11 @@ import {
   type IssuePropertyValue,
   type PropertyDefinition,
 } from '../api/properties'
+import { StatusIcon } from '../components/StatusIcon'
 import { WorkflowProgress } from '../components/WorkflowProgress'
 import { ArtifactViewer } from '../components/ArtifactViewer'
+import { MentionText } from '../components/MentionText'
+import { MentionInput, type MentionCandidate } from '../components/MentionInput'
 import { renderMarkdown } from '../lib/markdown'
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -41,10 +47,12 @@ function SubtaskTree({
   projectId,
   parentId,
   reloadKey,
+  path = [],
 }: {
   projectId: string
   parentId: string
   reloadKey: number
+  path?: string[]
 }) {
   const [children, setChildren] = useState<Issue[] | null>(null)
 
@@ -63,17 +71,26 @@ function SubtaskTree({
   }, [projectId, parentId, reloadKey])
 
   if (children === null) return null
-  if (children.length === 0) return null
+  const visibleChildren = children.filter((c) => !path.includes(c.id))
+  if (visibleChildren.length === 0) return null
   return (
-    <ul className="subtask-list">
-      {children.map((c) => (
+    <div className="detail-section" data-testid="subtask-tree">
+      <h3>子任务</h3>
+      <ul className="subtask-list">
+      {visibleChildren.map((c) => (
         <li key={c.id} data-testid={`subtask-${c.id}`}>
           <Link to={`/projects/${projectId}/issues/${c.id}`}>{c.title}</Link>{' '}
           <span data-testid={`subtask-status-${c.id}`}>{STATUS_LABELS[c.status] ?? c.status}</span>
-          <SubtaskTree projectId={projectId} parentId={c.id} reloadKey={reloadKey} />
+          <SubtaskTree
+            projectId={projectId}
+            parentId={c.id}
+            reloadKey={reloadKey}
+            path={[...path, c.id]}
+          />
         </li>
       ))}
-    </ul>
+      </ul>
+    </div>
   )
 }
 
@@ -81,10 +98,12 @@ function CommentThread({
   comment,
   replies,
   onReply,
+  candidates,
 }: {
   comment: IssueComment
   replies: IssueComment[]
   onReply: (parentId: string, content: string) => Promise<void>
+  candidates: MentionCandidate[]
 }) {
   const [text, setText] = useState('')
 
@@ -113,16 +132,68 @@ function CommentThread({
           </div>
         ))}
       </div>
-      <input
-        data-testid={`reply-input-${comment.id}`}
-        placeholder="回复…"
+      <MentionInput
+        testId={`reply-input-${comment.id}`}
+        placeholder="回复…（@ 可提及成员或 Agent）"
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={setText}
+        candidates={candidates}
       />
-      <button data-testid={`reply-submit-${comment.id}`} onClick={submit}>
+      <button className="btn btn-primary btn-sm" data-testid={`reply-submit-${comment.id}`} onClick={submit}>
         回复
       </button>
     </div>
+  )
+}
+
+const EVENT_FIELD_LABELS: Record<string, string> = {
+  created: '创建',
+  status: '状态',
+  assignee: '负责人',
+  title: '标题',
+  description: '描述',
+  priority: '优先级',
+  due_date: '截止日',
+  labels: '标签',
+  parent: '父任务',
+  stage: 'Stage',
+  position: '位置',
+}
+
+function TimelinePanel({ projectId, issueId }: { projectId: string; issueId: string }) {
+  const [events, setEvents] = useState<IssueEvent[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    listIssueEvents(projectId, issueId)
+      .then((list) => {
+        if (!cancelled) setEvents(list)
+      })
+      .catch(() => {
+        if (!cancelled) setEvents([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, issueId])
+
+  if (events === null) return <p data-testid="timeline-loading">加载中…</p>
+  if (events.length === 0) return <p data-testid="timeline-empty">暂无变更记录。</p>
+  return (
+    <ul className="issue-timeline" data-testid="timeline">
+      {events.map((e) => (
+        <li key={e.id} data-testid={`timeline-event-${e.field}`}>
+          <span className="badge">{EVENT_FIELD_LABELS[e.field] ?? e.field}</span>{' '}
+          <span data-testid={`timeline-actor-${e.field}`}>{e.actor_id || '系统'}</span>
+          {e.field !== 'created' && (
+            <span data-testid={`timeline-change-${e.field}`}>
+              {' '}
+              {e.old_value || '(空)'} → {e.new_value || '(空)'}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -168,7 +239,7 @@ function MetadataPanel({
         {entries.map((m) => (
           <li key={m.key} data-testid={`meta-row-${m.key}`}>
             <code>{m.key}</code> = <span data-testid={`meta-value-${m.key}`}>{m.value}</span>{' '}
-            <button data-testid={`meta-delete-${m.key}`} onClick={() => onDelete(m.key)}>
+            <button className="btn btn-ghost btn-sm" data-testid={`meta-delete-${m.key}`} onClick={() => onDelete(m.key)}>
               删除
             </button>
           </li>
@@ -186,7 +257,7 @@ function MetadataPanel({
         value={value}
         onChange={(e) => setValue(e.target.value)}
       />
-      <button data-testid="meta-set" onClick={onSet}>
+      <button className="btn btn-outline btn-sm" data-testid="meta-set" onClick={onSet}>
         设置
       </button>
     </div>
@@ -417,7 +488,7 @@ function AttachmentPanel({
         {attachments.map((a) => (
           <li key={a.id}>
             {a.file_name} <span className="badge">{a.content_type}</span>{' '}
-            <button data-testid={`download-${a.id}`} onClick={() => onDownload(a)}>
+            <button className="btn btn-outline btn-sm" data-testid={`download-${a.id}`} onClick={() => onDownload(a)}>
               下载
             </button>
           </li>
@@ -443,6 +514,7 @@ export function IssueDetailPage() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [newComment, setNewComment] = useState('')
+  const [agents, setAgents] = useState<MentionCandidate[]>([])
 
   const loadIssue = useCallback(
     () =>
@@ -484,6 +556,26 @@ export function IssueDetailPage() {
     loadAttachments()
     loadMetadata()
   }, [loadIssue, loadComments, loadAttachments, loadMetadata])
+
+  useEffect(() => {
+    let cancelled = false
+    listAgents()
+      .then((list) => {
+        if (!cancelled) {
+          setAgents(
+            list
+              .filter((a) => a.name)
+              .map((a) => ({ kind: 'agent' as const, id: a.id, name: a.name })),
+          )
+        }
+      })
+      .catch(() => {
+        // mention completion is best-effort; agents stay empty on failure
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const onTransition = (status: string) => {
     setError('')
@@ -532,67 +624,160 @@ export function IssueDetailPage() {
   const roots = comments.filter((c) => !c.parent_id)
   const repliesOf = (parentId: string) => comments.filter((c) => c.parent_id === parentId)
 
+  // Member candidates come from comment authors; the backend exposes no
+  // member-name API, so the author id doubles as the display name.
+  const memberCandidates: MentionCandidate[] = []
+  const seenAuthors = new Set<string>()
+  for (const c of comments) {
+    if (c.author_id && !seenAuthors.has(c.author_id)) {
+      seenAuthors.add(c.author_id)
+      memberCandidates.push({ kind: 'member', id: c.author_id, name: c.author_id })
+    }
+  }
+  const candidates = [...agents, ...memberCandidates]
+
   return (
-    <section data-testid="issue-detail">
-      <h2>{issue.title}</h2>
-      {error && (
-        <p role="alert" data-testid="detail-error">
-          {error}
-        </p>
-      )}
-      <div className="issue-meta">
-        <span className="badge">S{issue.stage}</span>
-        <select
-          aria-label="状态"
-          data-testid="detail-status"
-          value={issue.status}
-          onChange={(e) => onTransition(e.target.value)}
-        >
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABELS[s]}
-            </option>
-          ))}
-        </select>
-        <span>
-          负责人: <span data-testid="assignee">{issue.assignee_id || '未指派'}</span>
-        </span>
-        {issue.due_date && (
-          <span>
-            截止: <span data-testid="due-date">{issue.due_date}</span>
-          </span>
-        )}
-        {!editing && (
-          <button data-testid="edit-issue" onClick={startEdit}>
-            编辑
-          </button>
-        )}
-      </div>
-
-      {editing ? (
-        <div className="edit-form">
-          <input
-            data-testid="edit-title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-          <textarea
-            data-testid="edit-description"
-            rows={6}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-          <button data-testid="save-issue" onClick={onSave}>
-            保存
-          </button>
+    <div className="page" data-testid="issue-detail">
+      <div className="page-header">
+        <nav className="breadcrumb">
+          <Link to={`/projects/${id}/board`}>看板</Link>
+          <span className="crumb-sep">›</span>
+          <span className="crumb-leaf">#{issueId.slice(0, 8)}</span>
+        </nav>
+        <div className="page-header-actions">
+          {!editing && (
+            <button className="btn btn-ghost btn-sm" data-testid="edit-issue" onClick={startEdit}>
+              编辑
+            </button>
+          )}
         </div>
-      ) : (
-        <p className="issue-description">{issue.description}</p>
-      )}
+      </div>
+      <div className="detail-layout">
+        <div className="detail-main">
+          <div className="detail-main-inner">
+            {error && (
+              <p role="alert" data-testid="detail-error" style={{ color: 'var(--destructive)', marginTop: 0 }}>
+                {error}
+              </p>
+            )}
+            <h1 className="detail-title">{issue.title}</h1>
+            {editing ? (
+              <div className="edit-form" style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <input
+                  className="input"
+                  data-testid="edit-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+                <textarea
+                  className="input"
+                  data-testid="edit-description"
+                  rows={6}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-primary btn-sm" data-testid="save-issue" onClick={onSave}>
+                    保存
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="detail-desc">{issue.description}</p>
+            )}
 
-      <div data-testid="subtask-tree">
-        <h3>子任务</h3>
-        <SubtaskTree projectId={id} parentId={issueId} reloadKey={1} />
+            <SubtaskTree projectId={id} parentId={issueId} reloadKey={1} />
+
+            <div className="detail-section">
+              <WorkflowProgress issueId={issueId} />
+              <ArtifactViewer issueId={issueId} />
+            </div>
+
+            <div className="detail-section">
+              <h3>评论</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {roots.map((c) => (
+                  <CommentThread
+                    key={c.id}
+                    comment={c}
+                    replies={repliesOf(c.id)}
+                    onReply={onReply}
+                  />
+                ))}
+              </div>
+              <form onSubmit={onSubmitComment} className="inline-form">
+                <input
+                  className="input"
+                  style={{ flex: 1, minWidth: 200 }}
+                  data-testid="new-comment"
+                  placeholder="写评论…"
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                />
+                <button type="submit" className="btn btn-primary btn-sm" data-testid="submit-comment">
+                  评论
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <aside className="detail-aside">
+          <div>
+            <p className="section-title">属性</p>
+            <div className="prop-row">
+              <span className="prop-label">状态</span>
+              <span className="prop-value">
+                <StatusIcon status={issue.status} />
+                <select
+                  aria-label="状态"
+                  data-testid="detail-status"
+                  value={issue.status}
+                  onChange={(e) => onTransition(e.target.value)}
+                >
+                  {STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            </div>
+            <div className="prop-row">
+              <span className="prop-label">Stage</span>
+              <span className="prop-value">
+                <span className="chip">S{issue.stage}</span>
+              </span>
+            </div>
+            <div className="prop-row">
+              <span className="prop-label">负责人</span>
+              <span className="prop-value">
+                <span data-testid="assignee">{issue.assignee_id || '未指派'}</span>
+              </span>
+            </div>
+            {issue.due_date && (
+              <div className="prop-row">
+                <span className="prop-label">截止</span>
+                <span className="prop-value">
+                  <span data-testid="due-date">{issue.due_date}</span>
+                </span>
+              </div>
+            )}
+          </div>
+
+          <AttachmentPanel
+            projectId={id}
+            issueId={issueId}
+            attachments={attachments}
+            onChanged={loadAttachments}
+          />
+          <MetadataPanel
+            projectId={id}
+            issueId={issueId}
+            entries={metadata}
+            onChanged={loadMetadata}
+          />
+        </aside>
       </div>
 
       <PropertyValuesPanel projectId={id} issueId={issueId} />
@@ -634,5 +819,6 @@ export function IssueDetailPage() {
         onChanged={loadMetadata}
       />
     </section>
+    </div>
   )
 }

@@ -120,17 +120,63 @@ describe('NotificationsPage', () => {
 
     renderPage()
     await screen.findByTestId('notifications-page')
-    expect(mocked.listNotifications).toHaveBeenLastCalledWith(false)
+    expect(mocked.listNotifications).toHaveBeenLastCalledWith({ unread: false, kind: undefined })
 
     await user.click(screen.getByTestId('tab-unread'))
     await vi.waitFor(() => {
-      expect(mocked.listNotifications).toHaveBeenLastCalledWith(true)
+      expect(mocked.listNotifications).toHaveBeenLastCalledWith({ unread: true, kind: undefined })
     })
 
     await user.click(screen.getByTestId('tab-all'))
     await vi.waitFor(() => {
-      expect(mocked.listNotifications).toHaveBeenLastCalledWith(false)
+      expect(mocked.listNotifications).toHaveBeenLastCalledWith({ unread: false, kind: undefined })
     })
+  })
+
+  it('filters the inbox by kind', async () => {
+    const user = userEvent.setup()
+    mocked.listNotifications.mockResolvedValue({ notifications: [], unread: 0 })
+
+    renderPage()
+    await screen.findByTestId('notifications-page')
+    expect(mocked.listNotifications).toHaveBeenLastCalledWith({ unread: false, kind: undefined })
+
+    await user.click(screen.getByTestId('kind-mention'))
+    await vi.waitFor(() => {
+      expect(mocked.listNotifications).toHaveBeenLastCalledWith({ unread: false, kind: 'mention' })
+    })
+
+    await user.click(screen.getByTestId('kind-due'))
+    await vi.waitFor(() => {
+      expect(mocked.listNotifications).toHaveBeenLastCalledWith({ unread: false, kind: 'due' })
+    })
+
+    await user.click(screen.getByTestId('kind-all'))
+    await vi.waitFor(() => {
+      expect(mocked.listNotifications).toHaveBeenLastCalledWith({ unread: false, kind: undefined })
+    })
+  })
+
+  it('keeps the unread badge and list fresh via polling', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      mocked.listNotifications
+        .mockResolvedValueOnce({ notifications: [makeNotification()], unread: 1 })
+        .mockResolvedValueOnce({ notifications: [makeNotification({ read: true })], unread: 0 })
+        .mockResolvedValue({ notifications: [makeNotification({ read: true })], unread: 0 })
+
+      renderPage()
+      expect(await screen.findByTestId('notification-n1')).toHaveAttribute('data-read', 'false')
+      expect(screen.getByTestId('unread-count')).toHaveTextContent('1')
+      const callsAfterLoad = mocked.listNotifications.mock.calls.length
+
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      expect(mocked.listNotifications.mock.calls.length).toBeGreaterThan(callsAfterLoad)
+      expect(await screen.findByTestId('unread-count')).toHaveTextContent('0')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('marks one notification read from its read button without navigating', async () => {

@@ -25,6 +25,7 @@ vi.mock('../api/issues', async (importOriginal) => {
     transitionIssue: vi.fn(),
     listChildren: vi.fn(),
     listComments: vi.fn(),
+    listIssueEvents: vi.fn(),
     addComment: vi.fn(),
     listAttachments: vi.fn(),
     uploadAttachment: vi.fn(),
@@ -95,6 +96,7 @@ beforeEach(() => {
   mocked.listMetadata.mockResolvedValue([])
   vi.mocked(propertiesApi.listPropertyDefinitions).mockResolvedValue([])
   vi.mocked(propertiesApi.listIssueProperties).mockResolvedValue([])
+  mocked.listIssueEvents.mockResolvedValue([])
 })
 
 describe('IssueDetailPage', () => {
@@ -105,6 +107,44 @@ describe('IssueDetailPage', () => {
     expect(screen.getByText('do the thing')).toBeInTheDocument()
     expect(screen.getByText('u9')).toBeInTheDocument()
     expect(screen.getByText('2026-09-10')).toBeInTheDocument()
+  })
+
+  it('renders the change timeline', async () => {
+    mocked.listIssueEvents.mockResolvedValue([
+      {
+        id: 'e1',
+        issue_id: 'i1',
+        actor_id: 'u9',
+        field: 'created',
+        old_value: '',
+        new_value: 'parent issue',
+        created_at: '2026-09-05T00:00:00Z',
+      },
+      {
+        id: 'e2',
+        issue_id: 'i1',
+        actor_id: 'u2',
+        field: 'status',
+        old_value: 'todo',
+        new_value: 'in_progress',
+        created_at: '2026-09-05T01:00:00Z',
+      },
+    ])
+    renderPage()
+
+    const timeline = await screen.findByTestId('timeline')
+    expect(within(timeline).getByTestId('timeline-event-created')).toBeInTheDocument()
+    expect(within(timeline).getByTestId('timeline-event-status')).toBeInTheDocument()
+    expect(within(timeline).getByTestId('timeline-change-status')).toHaveTextContent(
+      'todo → in_progress',
+    )
+    expect(within(timeline).getByTestId('timeline-actor-status')).toHaveTextContent('u2')
+  })
+
+  it('shows the empty timeline state', async () => {
+    renderPage()
+
+    expect(await screen.findByTestId('timeline-empty')).toBeInTheDocument()
   })
 
   it('renders the subtask tree', async () => {

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"specpowers/backend/internal/domain"
@@ -40,7 +41,8 @@ func (w *WorkflowFlow) EnsureChange(ctx context.Context, userID, issueID string)
 	if err == nil {
 		return c, nil
 	}
-	if appErr, ok := err.(*httpapi.AppError); !ok || appErr.Status != http.StatusNotFound {
+	var appErr *httpapi.AppError
+	if !errors.As(err, &appErr) || appErr.Status != http.StatusNotFound {
 		return nil, err
 	}
 	c, _, err = w.svc.StartChange(ctx, userID, issueID, true)

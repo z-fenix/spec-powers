@@ -56,7 +56,7 @@ func TestNotificationStoreRoundTrip(t *testing.T) {
 	}
 	_ = second
 
-	list, err := notifications.ListNotifications(ctx, user.ID, false)
+	list, err := notifications.ListNotifications(ctx, user.ID, false, "")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,6 +17,13 @@ type IssueStore struct {
 }
 
 func NewIssueStore(pool *pgxpool.Pool) *IssueStore { return &IssueStore{pool: pool} }
+
+// ilikePattern turns a keyword into a substring ILIKE pattern with the
+// wildcard metacharacters escaped.
+func ilikePattern(q string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return "%" + r.Replace(q) + "%"
+}
 
 // issueColumns: nullable uuid columns are coerced to text with ” for NULL so
 // they scan into plain Go strings.
@@ -121,12 +129,46 @@ func (s *IssueStore) ListIssues(ctx context.Context, projectID string, filter st
 		args = append(args, *filter.Stage)
 		where += fmt.Sprintf(" AND stage = $%d", len(args))
 	}
+	if filter.Query != "" {
+		args = append(args, ilikePattern(filter.Query))
+		pat := fmt.Sprintf("$%d", len(args))
+		where += fmt.Sprintf(` AND (title ILIKE %s OR description ILIKE %s OR EXISTS (
+			SELECT 1 FROM issue_comments c
+			WHERE c.issue_id = issues.id AND c.content ILIKE %s))`, pat, pat, pat)
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+issueColumns+`
 		FROM issues WHERE `+where+`
 		ORDER BY stage, position, created_at`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
+	}
+	defer rows.Close()
+	var list []domain.Issue
+	for rows.Next() {
+		var i domain.Issue
+		if err := rows.Scan(&i.ID, &i.ProjectID, &i.ParentID, &i.Title, &i.Description,
+			&i.Status, &i.Priority, &i.AssigneeID, &i.DueDate, &i.Labels,
+			&i.Stage, &i.Position, &i.CreatedBy, &i.CreatedAt, &i.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan issue: %w", err)
+		}
+		list = append(list, i)
+	}
+	return list, rows.Err()
+}
+
+// ListIssuesWithDueDate returns every open issue that has a due date,
+// across all projects. It backs the notification due-date scanner, which
+// consumes it through its own narrow interface.
+func (s *IssueStore) ListIssuesWithDueDate(ctx context.Context) ([]domain.Issue, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT `+issueColumns+`
+		FROM issues
+		WHERE due_date IS NOT NULL
+		  AND status NOT IN ('done', 'cancelled')
+		ORDER BY due_date, id`)
+	if err != nil {
+		return nil, fmt.Errorf("list issues with due date: %w", err)
 	}
 	defer rows.Close()
 	var list []domain.Issue

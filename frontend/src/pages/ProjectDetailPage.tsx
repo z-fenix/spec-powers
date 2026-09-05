@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../api/client'
 import { Modal } from '../components/Modal'
+import { ProjectUsagePanel } from '../components/Usage'
 import type { Project } from './ProjectsPage'
 
 interface Resource {
@@ -165,6 +166,8 @@ export function ProjectDetailPage() {
               ))}
             </ul>
           </div>
+
+          <ProjectUsagePanel projectId={id} />
 
           <div className="detail-section">
             <h3 className="section-title">项目上下文</h3>

@@ -23,6 +23,7 @@ import { STATUSES, STATUS_LABELS } from '../lib/status'
 import { StatusIcon } from '../components/StatusIcon'
 import { WorkflowProgress } from '../components/WorkflowProgress'
 import { ArtifactViewer } from '../components/ArtifactViewer'
+import { IssueUsagePanel } from '../components/Usage'
 import { renderMarkdown } from '../lib/markdown'
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -414,6 +415,10 @@ export function IssueDetailPage() {
             <div className="detail-section">
               <WorkflowProgress issueId={issueId} />
               <ArtifactViewer issueId={issueId} />
+            </div>
+
+            <div className="detail-section">
+              <IssueUsagePanel issueId={issueId} />
             </div>
 
             <div className="detail-section">

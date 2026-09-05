@@ -193,6 +193,55 @@ func (s *RunStore) FinishRun(ctx context.Context, id, status, errMsg string) (*d
 		id, status, errMsg))
 }
 
+func (s *RunStore) RecordRunUsage(ctx context.Context, runID string, promptTokens, completionTokens int64) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO run_usage (run_id, prompt_tokens, completion_tokens)
+		VALUES ($1, $2, $3)`, runID, promptTokens, completionTokens)
+	if err != nil {
+		return fmt.Errorf("record run usage: %w", err)
+	}
+	return nil
+}
+
+func (s *RunStore) IssueUsage(ctx context.Context, issueID string) (*domain.UsageTotals, error) {
+	t := &domain.UsageTotals{}
+	err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*)::int, COALESCE(SUM(u.prompt_tokens), 0), COALESCE(SUM(u.completion_tokens), 0)
+		FROM run_usage u
+		JOIN runs r ON r.id = u.run_id
+		WHERE r.issue_id = $1`, issueID).
+		Scan(&t.Calls, &t.PromptTokens, &t.CompletionTokens)
+	if err != nil {
+		return nil, fmt.Errorf("issue usage: %w", err)
+	}
+	return t, nil
+}
+
+func (s *RunStore) ProjectUsage(ctx context.Context, projectID string) ([]domain.IssueUsage, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT r.issue_id::text, i.title, COUNT(*)::int,
+		       COALESCE(SUM(u.prompt_tokens), 0), COALESCE(SUM(u.completion_tokens), 0)
+		FROM run_usage u
+		JOIN runs r ON r.id = u.run_id
+		JOIN issues i ON i.id = r.issue_id
+		WHERE i.project_id = $1
+		GROUP BY r.issue_id, i.title
+		ORDER BY i.title, r.issue_id`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("project usage: %w", err)
+	}
+	defer rows.Close()
+	var list []domain.IssueUsage
+	for rows.Next() {
+		var u domain.IssueUsage
+		if err := rows.Scan(&u.IssueID, &u.Title, &u.Calls, &u.PromptTokens, &u.CompletionTokens); err != nil {
+			return nil, fmt.Errorf("scan issue usage: %w", err)
+		}
+		list = append(list, u)
+	}
+	return list, rows.Err()
+}
+
 type RunLogStore struct {
 	pool *pgxpool.Pool
 }

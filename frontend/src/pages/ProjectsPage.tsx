@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch, ApiError } from '../api/client'
+import { Modal } from '../components/Modal'
 
 export interface Project {
   id: string
@@ -18,7 +19,7 @@ function errorMessage(err: unknown, fallback: string): string {
 export function ProjectsPage() {
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [error, setError] = useState('')
-  const [setShowCreate] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
 
@@ -74,7 +75,7 @@ export function ProjectsPage() {
         </span>
         <h1 className="page-title">
           项目
-          {projects && <span className="page-count">{list.length}</span>}
+          {projects && <span className="page-count">{projects.length}</span>}
         </h1>
         <div className="page-header-actions">
           <button
@@ -98,24 +99,29 @@ export function ProjectsPage() {
             </p>
           )}
 
-      <form onSubmit={onCreate} className="inline-form">
-        <input
-          data-testid="project-name"
-          placeholder="项目名称"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-        />
-        <input
-          data-testid="project-description"
-          placeholder="描述（可选）"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-        />
-        <button type="submit" data-testid="create-project">
-          创建项目
-        </button>
-      </form>
+      {showCreate && (
+        <Modal title="新建项目" onClose={() => setShowCreate(false)}>
+          <form onSubmit={onCreate} className="inline-form">
+            <input
+              data-testid="project-name"
+              placeholder="项目名称"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              autoFocus
+            />
+            <input
+              data-testid="project-description"
+              placeholder="描述（可选）"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+            <button type="submit" data-testid="confirm-create-project">
+              创建
+            </button>
+          </form>
+        </Modal>
+      )}
 
       {projects && projects.length === 0 && <p>还没有项目，先创建一个。</p>}
 
@@ -133,6 +139,8 @@ export function ProjectsPage() {
           </li>
         ))}
       </ul>
-    </section>
+        </div>
+      </div>
+    </div>
   )
 }

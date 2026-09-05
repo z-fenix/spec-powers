@@ -128,6 +128,15 @@ type RunStore interface {
 	// FinishRun sets a run's terminal status ("done" or "failed") with an
 	// optional error message and stamps finished_at.
 	FinishRun(ctx context.Context, id, status, errMsg string) (*domain.Run, error)
+	// RecordRunUsage appends one LLM completion's token usage to the run.
+	// Called once per completion so usage survives a run that later fails.
+	RecordRunUsage(ctx context.Context, runID string, promptTokens, completionTokens int64) error
+	// IssueUsage aggregates the token usage of every completion of one
+	// issue's runs.
+	IssueUsage(ctx context.Context, issueID string) (*domain.UsageTotals, error)
+	// ProjectUsage aggregates token usage per issue of one project, ordered
+	// by issue title. Issues without recorded usage are omitted.
+	ProjectUsage(ctx context.Context, projectID string) ([]domain.IssueUsage, error)
 }
 
 type RunLogStore interface {

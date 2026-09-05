@@ -87,7 +87,8 @@ describe('AutopilotsPage', () => {
 
   it('shows the empty state when no autopilots exist', async () => {
     renderPage()
-    expect(await screen.findByText('暂无 Autopilot。')).toBeInTheDocument()
+    expect(await screen.findByTestId('page-empty')).toBeInTheDocument()
+    expect(screen.getByText('还没有 Autopilot')).toBeInTheDocument()
   })
 
   it('shows an error when listing fails', async () => {

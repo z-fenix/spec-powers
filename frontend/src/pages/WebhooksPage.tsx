@@ -73,14 +73,24 @@ export function WebhooksPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="page-title">Webhooks</h1>
+        <span className="project-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden><path d="M5.5 3.5a2 2 0 1 0-1.7 3.1l2 3.4m4.9-6.5a2 2 0 1 1 1.5 3.4L10.5 10M4.5 10.5a2 2 0 1 0 3 1.7h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg></span>
+        <h1 className="page-title">
+          Webhooks
+          {webhooks && webhooks.length > 0 && (
+            <span className="page-count">{webhooks.length}</span>
+          )}
+        </h1>
         <button type="button" className="btn btn-primary" data-testid="webhook-create" onClick={() => setShowCreate(true)}>
           新建 Webhook
         </button>
       </div>
       {error && <p role="alert">{error}</p>}
       {!error && webhooks === null && <p>加载中…</p>}
-      {webhooks && webhooks.length === 0 && <p>暂无 Webhook。</p>}
+      {webhooks && webhooks.length === 0 && <div className="page-empty" data-testid="page-empty">
+          <span className="page-empty-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden><path d="M5.5 3.5a2 2 0 1 0-1.7 3.1l2 3.4m4.9-6.5a2 2 0 1 1 1.5 3.4L10.5 10M4.5 10.5a2 2 0 1 0 3 1.7h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg></span>
+          <p className="page-empty-title">还没有 Webhook</p>
+          <p className="page-empty-desc">添加 Webhook 后可以把工作区事件推送到外部。</p>
+        </div>}
       <ul className="webhook-list">
         {(webhooks ?? []).map((w) => (
           <li key={w.id} data-testid={`webhook-row-${w.id}`}>

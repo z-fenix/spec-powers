@@ -57,9 +57,10 @@ describe('AgentsPage', () => {
   it('shows the empty hint when no agents exist', async () => {
     render(<AgentsPage />)
 
-    await waitFor(() =>
-      expect(screen.getByText('还没有 Agent，先创建一个。')).toBeInTheDocument(),
-    )
+    await waitFor(() => {
+      expect(screen.getByTestId('page-empty')).toBeInTheDocument()
+      expect(screen.getByText('还没有 Agent')).toBeInTheDocument()
+    })
   })
 
   it('creates a server-runtime agent and reloads the list', async () => {

@@ -177,7 +177,13 @@ export function AgentsPage() {
   return (
     <div className="page" data-testid="agents-page">
       <div className="page-header">
-        <h1 className="page-title">Agents</h1>
+        <span className="project-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden><rect x="2.75" y="4.75" width="10.5" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><circle cx="5.75" cy="8.25" r="0.9" fill="currentColor"/><circle cx="10.25" cy="8.25" r="0.9" fill="currentColor"/><path d="M8 2.25V4.5M5.5 11.5h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg></span>
+        <h1 className="page-title">
+          Agents
+          {agents && agents.length > 0 && (
+            <span className="page-count">{agents.length}</span>
+          )}
+        </h1>
       </div>
       <div className="page-body">
       {error && (
@@ -216,7 +222,11 @@ export function AgentsPage() {
         onSave={onCreate}
       />
 
-      {agents && agents.length === 0 && <p>还没有 Agent，先创建一个。</p>}
+      {agents && agents.length === 0 && <div className="page-empty" data-testid="page-empty">
+          <span className="page-empty-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden><rect x="2.75" y="4.75" width="10.5" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><circle cx="5.75" cy="8.25" r="0.9" fill="currentColor"/><circle cx="10.25" cy="8.25" r="0.9" fill="currentColor"/><path d="M8 2.25V4.5M5.5 11.5h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg></span>
+          <p className="page-empty-title">还没有 Agent</p>
+          <p className="page-empty-desc">从右上角创建第一个智能体。</p>
+        </div>}
 
       <ul className="project-list" data-testid="agent-list">
         {(agents ?? []).map((a) => (

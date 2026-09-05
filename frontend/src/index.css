@@ -371,6 +371,7 @@ textarea::placeholder {
 }
 
 .page-count {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
   font-size: var(--text-caption);
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
@@ -391,6 +392,47 @@ textarea::placeholder {
 
 .page-gutter {
   padding: 16px;
+}
+
+/* CollectionPageState (Multica layout/collection-page.tsx): centered empty
+   state with a 48px muted icon circle, one-line title and quiet description */
+.page-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 64px 24px;
+  text-align: center;
+}
+
+.page-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 4px;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.page-empty-title {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.page-empty-desc {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  color: var(--muted-foreground);
 }
 
 .breadcrumb {

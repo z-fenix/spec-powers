@@ -39,9 +39,23 @@ describe('notifications api', () => {
 
   it('lists only unread notifications when asked', async () => {
     mockedFetch.mockResolvedValueOnce({ notifications: [], unread: 0 })
-    await listNotifications(true)
+    await listNotifications({ unread: true })
 
     expect(apiFetch).toHaveBeenCalledWith('/notifications?unread=true')
+  })
+
+  it('filters by kind', async () => {
+    mockedFetch.mockResolvedValueOnce({ notifications: [], unread: 0 })
+    await listNotifications({ kind: 'mention' })
+
+    expect(apiFetch).toHaveBeenCalledWith('/notifications?kind=mention')
+  })
+
+  it('combines unread and kind filters', async () => {
+    mockedFetch.mockResolvedValueOnce({ notifications: [], unread: 0 })
+    await listNotifications({ unread: true, kind: 'due' })
+
+    expect(apiFetch).toHaveBeenCalledWith('/notifications?unread=true&kind=due')
   })
 
   it('marks one notification read', async () => {

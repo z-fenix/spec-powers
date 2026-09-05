@@ -337,3 +337,29 @@ func TestRuntimeAppendLogAndFinish(t *testing.T) {
 		t.Fatalf("finished run = %+v", finished)
 	}
 }
+
+func TestRuntimeReportUsageRecordsTokenCounts(t *testing.T) {
+	f := setupRuntime(t)
+	run := f.seedRun(t, f.agentID, "i1")
+
+	w := f.do(t, f.token, http.MethodPost, "/runtime/runs/"+run.ID+"/usage",
+		map[string]int64{"prompt_tokens": 42, "completion_tokens": 17})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("usage code = %d, body %s", w.Code, w.Body.String())
+	}
+
+	totals, err := f.runs.IssueUsage(context.Background(), "i1")
+	if err != nil {
+		t.Fatalf("issue usage: %v", err)
+	}
+	if totals.Calls != 1 || totals.PromptTokens != 42 || totals.CompletionTokens != 17 {
+		t.Fatalf("totals = %+v, want calls=1 prompt=42 completion=17", totals)
+	}
+
+	// Negative counts are refused.
+	w = f.do(t, f.token, http.MethodPost, "/runtime/runs/"+run.ID+"/usage",
+		map[string]int64{"prompt_tokens": -1, "completion_tokens": 5})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("negative usage code = %d, want 400", w.Code)
+	}
+}

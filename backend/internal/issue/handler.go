@@ -20,6 +20,9 @@ type Handler struct {
 	// collab is the comment/attachment/metadata subrouter mounted under
 	// /{issueID}; nil in tests that don't exercise collaboration.
 	collab http.Handler
+	// properties is the issue property-value subrouter mounted under
+	// /{issueID}/properties; nil in tests that don't exercise properties.
+	properties http.Handler
 }
 
 func NewHandler(svc *Service, tokens *auth.TokenService) *Handler {
@@ -29,6 +32,13 @@ func NewHandler(svc *Service, tokens *auth.TokenService) *Handler {
 // WithCollab attaches the collaboration subrouter served under /{issueID}.
 func (h *Handler) WithCollab(c http.Handler) *Handler {
 	h.collab = c
+	return h
+}
+
+// WithProperties attaches the property-value subrouter served under
+// /{issueID}/properties.
+func (h *Handler) WithProperties(p http.Handler) *Handler {
+	h.properties = p
 	return h
 }
 
@@ -65,9 +75,27 @@ func toIssueDTO(i *domain.Issue) issueDTO {
 	}
 }
 
+type statusDTO struct {
+	Name     string `json:"name"`
+	Category string `json:"category"`
+	Position int    `json:"position"`
+}
+
+func toStatusDTOs(list []domain.WorkspaceStatus) []statusDTO {
+	out := make([]statusDTO, 0, len(list))
+	for _, s := range list {
+		out = append(out, statusDTO{Name: s.Name, Category: s.Category, Position: s.Position})
+	}
+	return out
+}
+
 func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
 	r.Use(auth.RequireAuth(h.tokens))
+	// Static segments take precedence over the /{issueID} param route.
+	r.Get("/statuses", h.listStatuses)
+	r.Put("/statuses", h.putStatus)
+	r.Delete("/statuses/{name}", h.removeStatus)
 	r.Post("/", h.create)
 	r.Get("/", h.list)
 	r.Route("/{issueID}", func(r chi.Router) {
@@ -76,6 +104,9 @@ func (h *Handler) Routes() http.Handler {
 		r.Delete("/", h.remove)
 		r.Post("/status", h.transition)
 		r.Get("/children", h.children)
+		if h.properties != nil {
+			r.Mount("/properties", h.properties)
+		}
 		r.Get("/events", h.events)
 		if h.collab != nil {
 			r.Mount("/", h.collab)
@@ -275,6 +306,30 @@ func (h *Handler) children(w http.ResponseWriter, r *http.Request) {
 	httpapi.JSON(w, http.StatusOK, map[string]any{"issues": dtos})
 }
 
+func (h *Handler) listStatuses(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.ListStatuses(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "projectID"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	httpapi.JSON(w, http.StatusOK, map[string]any{"statuses": toStatusDTOs(list)})
+}
+
+func (h *Handler) putStatus(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name     string `json:"name"`
+		Category string `json:"category"`
+		Position *int   `json:"position"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpapi.Error(w, httpapi.ErrInvalid("malformed JSON body"))
+		return
+	}
+	list, err := h.svc.UpsertStatus(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "projectID"), StatusInput{
+		Name:     req.Name,
+		Category: req.Category,
+		Position: req.Position,
+	})
 type issueEventDTO struct {
 	ID        string `json:"id"`
 	IssueID   string `json:"issue_id"`
@@ -291,6 +346,16 @@ func (h *Handler) events(w http.ResponseWriter, r *http.Request) {
 		writeAppError(w, err)
 		return
 	}
+	httpapi.JSON(w, http.StatusOK, map[string]any{"statuses": toStatusDTOs(list)})
+}
+
+func (h *Handler) removeStatus(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.DeleteStatus(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "projectID"), chi.URLParam(r, "name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	httpapi.JSON(w, http.StatusOK, map[string]any{"statuses": toStatusDTOs(list)})
 	dtos := make([]issueEventDTO, 0, len(list))
 	for _, e := range list {
 		dtos = append(dtos, issueEventDTO{

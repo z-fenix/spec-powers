@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -24,6 +25,10 @@ type fakeRuns struct {
 	// localAgents mirrors the postgres ClaimNextRun semantics: runs of
 	// local-runtime agents are invisible to the server worker.
 	localAgents map[string]bool
+	// usage holds completions recorded via RecordRunUsage; projectUsage is
+	// pre-seeded by tests (the fake cannot join runs to issues' projects).
+	usage        []domain.RunUsage
+	projectUsage []domain.IssueUsage
 }
 
 func newFakeRuns() *fakeRuns {
@@ -119,6 +124,47 @@ func (f *fakeRuns) FinishRun(_ context.Context, id, status, errMsg string) (*dom
 	r.FinishedAt = &now
 	cp := *r
 	return &cp, nil
+}
+
+func (f *fakeRuns) RecordRunUsage(_ context.Context, runID string, promptTokens, completionTokens int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.byID[runID]; !ok {
+		return store.ErrNotFound
+	}
+	f.usage = append(f.usage, domain.RunUsage{
+		RunID: runID, PromptTokens: promptTokens, CompletionTokens: completionTokens, CreatedAt: time.Now(),
+	})
+	return nil
+}
+
+func (f *fakeRuns) IssueUsage(_ context.Context, issueID string) (*domain.UsageTotals, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t := &domain.UsageTotals{}
+	for _, u := range f.usage {
+		if r, ok := f.byID[u.RunID]; ok && r.IssueID == issueID {
+			t.Calls++
+			t.PromptTokens += u.PromptTokens
+			t.CompletionTokens += u.CompletionTokens
+		}
+	}
+	return t, nil
+}
+
+func (f *fakeRuns) ProjectUsage(_ context.Context, _ string) ([]domain.IssueUsage, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]domain.IssueUsage, len(f.projectUsage))
+	copy(out, f.projectUsage)
+	// Mirror the postgres store's ORDER BY title, issue_id.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Title != out[j].Title {
+			return out[i].Title < out[j].Title
+		}
+		return out[i].IssueID < out[j].IssueID
+	})
+	return out, nil
 }
 
 type fakeLogs struct {

@@ -2,6 +2,7 @@ package issue
 
 import (
 	"context"
+	"log"
 	"slices"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"specpowers/backend/internal/domain"
 	"specpowers/backend/internal/httpapi"
+	"specpowers/backend/internal/notification"
 	"specpowers/backend/internal/store"
 )
 
@@ -22,16 +24,26 @@ type RunTrigger interface {
 }
 
 type Service struct {
-	issues   store.IssueStore
-	projects store.ProjectStore
-	users    store.UserStore
-	trigger  RunTrigger
+	issues      store.IssueStore
+	projects    store.ProjectStore
+	users       store.UserStore
+	trigger     RunTrigger
+	subscribers store.SubscriberStore
+	notifier    notification.Sink
 	// events records the issue timeline; nil disables event recording.
 	events store.IssueEventStore
 }
 
 func NewService(issues store.IssueStore, projects store.ProjectStore, users store.UserStore) *Service {
 	return &Service{issues: issues, projects: projects, users: users}
+}
+
+// WithStatusStore installs the workspace status directory store; without it
+// the built-in default directory applies. It returns the service for
+// chaining.
+func (s *Service) WithStatusStore(st store.WorkspaceStatusStore) *Service {
+	s.statuses = st
+	return s
 }
 
 // WithRunTrigger installs the run trigger; it returns the service for
@@ -41,6 +53,18 @@ func (s *Service) WithRunTrigger(t RunTrigger) *Service {
 	return s
 }
 
+// WithSubscribers installs the subscriber store; new issues then subscribe
+// their creator by default.
+func (s *Service) WithSubscribers(sub store.SubscriberStore) *Service {
+	s.subscribers = sub
+	return s
+}
+
+// WithNotifier installs a notification sink; status transitions then notify
+// the issue's subscribers (except the actor).
+func (s *Service) WithNotifier(n notification.Sink) *Service {
+	s.notifier = n
+	return s
 // WithEventStore installs the timeline event store; issue creation, field
 // updates and status transitions then append events.
 func (s *Service) WithEventStore(e store.IssueEventStore) *Service {
@@ -133,6 +157,41 @@ func validatePriority(p string) error {
 	return nil
 }
 
+// directoryFor resolves the status directory governing a project: the
+// project's workspace directory when a status store is installed, the
+// built-in defaults otherwise.
+func (s *Service) directoryFor(ctx context.Context, projectID string) ([]domain.WorkspaceStatus, error) {
+	if s.statuses == nil {
+		return domain.DefaultStatusDirectory(), nil
+	}
+	p, err := s.projects.GetProject(ctx, projectID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			return nil, httpapi.ErrNotFound("project not found")
+		}
+		return nil, httpapi.ErrInternal("get project failed")
+	}
+	dir, err := s.statuses.ListStatuses(ctx, p.WorkspaceID)
+	if err != nil {
+		return nil, httpapi.ErrInternal("list workspace statuses failed")
+	}
+	return dir, nil
+}
+
+// defaultStatus picks the initial status for a new issue: the first
+// todo-category entry of the directory, falling back to the first entry.
+func defaultStatus(dir []domain.WorkspaceStatus) string {
+	for _, s := range dir {
+		if s.Category == domain.CatTodo {
+			return s.Name
+		}
+	}
+	if len(dir) > 0 {
+		return dir[0].Name
+	}
+	return StatusTodo
+}
+
 func (s *Service) validateAssignee(ctx context.Context, assigneeID string) error {
 	if assigneeID == "" {
 		return nil
@@ -161,7 +220,11 @@ func (s *Service) CreateIssue(ctx context.Context, userID, projectID string, in 
 	if err := s.validateAssignee(ctx, in.AssigneeID); err != nil {
 		return nil, err
 	}
-	status := StatusTodo
+	dir, err := s.directoryFor(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	status := defaultStatus(dir)
 	if in.ParentID != "" {
 		parent, err := s.issues.GetIssue(ctx, in.ParentID)
 		if err == store.ErrNotFound {
@@ -196,6 +259,9 @@ func (s *Service) CreateIssue(ctx context.Context, userID, projectID string, in 
 	if err != nil {
 		return nil, httpapi.ErrInternal("create issue failed")
 	}
+	if s.subscribers != nil {
+		if err := s.subscribers.AddIssueSubscriber(ctx, created.ID, userID); err != nil {
+			log.Printf("issue: subscribe creator failed: %v", err)
 	if err := s.recordEvent(ctx, created.ID, userID, "created", "", created.Title); err != nil {
 		return nil, err
 	}
@@ -428,15 +494,21 @@ func (s *Service) GetChildren(ctx context.Context, userID, issueID string) ([]do
 // TransitionStatus moves an issue through the kanban state machine. When the
 // issue is a child and reaches a terminal state while every sibling is also
 // terminal, a wakeup is recorded on the parent so its assignee can be woken
-// for acceptance (Multica-compatible behavior).
+// for acceptance (Multica-compatible behavior). Subscribers are notified
+// about the transition, except the actor.
 func (s *Service) TransitionStatus(ctx context.Context, userID, issueID, to string) (*domain.Issue, error) {
 	current, err := s.requireProjectIssue(ctx, userID, issueID)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := Transition(current.Status, to); err != nil {
+	dir, err := s.directoryFor(ctx, current.ProjectID)
+	if err != nil {
 		return nil, err
 	}
+	if _, err := TransitionIn(dir, current.Status, to); err != nil {
+		return nil, err
+	}
+	from := current.Status
 	oldStatus := current.Status
 	current.Status = to
 	saved, err := s.issues.UpdateIssue(ctx, current)
@@ -454,7 +526,32 @@ func (s *Service) TransitionStatus(ctx context.Context, userID, issueID, to stri
 			return nil, httpapi.ErrInternal("notify status change failed")
 		}
 	}
+	s.notifySubscribersStatusChanged(ctx, userID, saved, from, to)
 	return saved, nil
+}
+
+// notifySubscribersStatusChanged is best-effort: subscriber lookups and
+// delivery failures never fail the transition itself.
+func (s *Service) notifySubscribersStatusChanged(ctx context.Context, actorID string, i *domain.Issue, from, to string) {
+	if s.notifier == nil || s.subscribers == nil {
+		return
+	}
+	users, err := s.subscribers.ListIssueSubscribers(ctx, i.ID)
+	if err != nil {
+		log.Printf("issue: list subscribers failed: %v", err)
+		return
+	}
+	ids := make([]string, 0, len(users))
+	for _, u := range users {
+		ids = append(ids, u.ID)
+	}
+	notification.NotifyMany(ctx, s.notifier, ids, actorID, notification.NotifyInput{
+		Kind:      "status_changed",
+		Title:     "Status changed on: " + i.Title,
+		Body:      from + " → " + to,
+		IssueID:   i.ID,
+		ProjectID: i.ProjectID,
+	})
 }
 
 func (s *Service) wakeParentIfChildrenTerminal(ctx context.Context, child *domain.Issue) error {
@@ -466,7 +563,7 @@ func (s *Service) wakeParentIfChildrenTerminal(ctx context.Context, child *domai
 		return httpapi.ErrInternal("list sibling issues failed")
 	}
 	for _, sib := range siblings {
-		if !IsTerminal(sib.Status) {
+		if !IsTerminalIn(dir, sib.Status) {
 			return nil
 		}
 	}
@@ -483,4 +580,96 @@ func (s *Service) wakeParentIfChildrenTerminal(ctx context.Context, child *domai
 		}
 	}
 	return nil
+}
+
+// StatusInput carries one directory entry for create/update.
+type StatusInput struct {
+	Name     string
+	Category string
+	Position *int
+}
+
+// ListStatuses returns the workspace status directory governing a project.
+// Any project member.
+func (s *Service) ListStatuses(ctx context.Context, userID, projectID string) ([]domain.WorkspaceStatus, error) {
+	if err := s.requireProjectRole(ctx, userID, projectID, "member"); err != nil {
+		return nil, err
+	}
+	return s.directoryFor(ctx, projectID)
+}
+
+// UpsertStatus creates or updates one directory entry on the project's
+// workspace. Owner only; returns the full directory after the write.
+func (s *Service) UpsertStatus(ctx context.Context, userID, projectID string, in StatusInput) ([]domain.WorkspaceStatus, error) {
+	if err := s.requireProjectRole(ctx, userID, projectID, "owner"); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(in.Name) == "" {
+		return nil, httpapi.ErrInvalid("status name is required")
+	}
+	if !domain.IsValidStatusCategory(in.Category) {
+		return nil, httpapi.ErrInvalid("unknown status category: " + in.Category)
+	}
+	if s.statuses == nil {
+		return nil, httpapi.ErrInternal("status directory not configured")
+	}
+	p, err := s.projects.GetProject(ctx, projectID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			return nil, httpapi.ErrNotFound("project not found")
+		}
+		return nil, httpapi.ErrInternal("get project failed")
+	}
+	entry := &domain.WorkspaceStatus{
+		WorkspaceID: p.WorkspaceID,
+		Name:        in.Name,
+		Category:    in.Category,
+	}
+	if in.Position != nil {
+		entry.Position = *in.Position
+	} else {
+		dir, err := s.statuses.ListStatuses(ctx, p.WorkspaceID)
+		if err != nil {
+			return nil, httpapi.ErrInternal("list workspace statuses failed")
+		}
+		entry.Position = len(dir)
+	}
+	if _, err := s.statuses.UpsertStatus(ctx, entry); err != nil {
+		return nil, httpapi.ErrInternal("upsert workspace status failed")
+	}
+	dir, err := s.statuses.ListStatuses(ctx, p.WorkspaceID)
+	if err != nil {
+		return nil, httpapi.ErrInternal("list workspace statuses failed")
+	}
+	return dir, nil
+}
+
+// DeleteStatus removes one directory entry from the project's workspace.
+// Owner only; unknown names are 404. Returns the full directory after the
+// delete.
+func (s *Service) DeleteStatus(ctx context.Context, userID, projectID, name string) ([]domain.WorkspaceStatus, error) {
+	if err := s.requireProjectRole(ctx, userID, projectID, "owner"); err != nil {
+		return nil, err
+	}
+	if s.statuses == nil {
+		return nil, httpapi.ErrInternal("status directory not configured")
+	}
+	p, err := s.projects.GetProject(ctx, projectID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			return nil, httpapi.ErrNotFound("project not found")
+		}
+		return nil, httpapi.ErrInternal("get project failed")
+	}
+	if err := s.statuses.DeleteStatus(ctx, p.WorkspaceID, name); err != nil {
+		if err == store.ErrNotFound {
+			return nil, httpapi.ErrNotFound("status not found")
+		}
+		return nil, httpapi.ErrInternal("delete workspace status failed")
+	}
+	dir, err := s.statuses.ListStatuses(ctx, p.WorkspaceID)
+	if err != nil {
+		return nil, httpapi.ErrInternal("list workspace statuses failed")
+	}
+	return dir, nil
 }

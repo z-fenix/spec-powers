@@ -34,10 +34,38 @@ vi.mock('../api/runs', async (importOriginal) => {
   }
 })
 
+vi.mock('../api/statuses', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/statuses')>()
+  return {
+    ...actual,
+    listStatuses: vi.fn(),
+    upsertStatus: vi.fn(),
+    deleteStatus: vi.fn(),
+  }
+})
+
+vi.mock('../api/properties', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/properties')>()
+  return {
+    ...actual,
+    listPropertyDefinitions: vi.fn(),
+    listProjectIssueProperties: vi.fn(),
+  }
+})
+
+import {
+  listPropertyDefinitions,
+  listProjectIssueProperties,
+} from '../api/properties'
+import type { PropertyDefinition } from '../api/properties'
+
 import { getChangeByIssue, listArtifacts } from '../api/workflow'
 import type { Change, Artifact } from '../api/workflow'
 import { getRun } from '../api/runs'
 import type { Run, RunLog } from '../api/runs'
+import { listStatuses, upsertStatus, deleteStatus } from '../api/statuses'
+import type { WorkspaceStatus } from '../api/statuses'
+import { DEFAULT_DIRECTORY } from '../lib/status'
 
 const mocked = vi.mocked(api)
 
@@ -133,7 +161,26 @@ function renderPage() {
 beforeEach(() => {
   vi.clearAllMocks()
   mocked.listIssues.mockResolvedValue([])
+  vi.mocked(listStatuses).mockResolvedValue(DEFAULT_DIRECTORY)
 })
+
+function makeStatus(overrides: Partial<WorkspaceStatus>): WorkspaceStatus {
+  return { name: 'custom', category: 'todo', position: 0, ...overrides }
+  vi.mocked(listPropertyDefinitions).mockResolvedValue([])
+  vi.mocked(listProjectIssueProperties).mockResolvedValue([])
+})
+
+function makeDef(overrides: Partial<PropertyDefinition> = {}): PropertyDefinition {
+  return {
+    id: 'prop1',
+    project_id: 'p1',
+    name: '模块',
+    type: 'select',
+    options: ['前端', '后端'],
+    position: 0,
+    ...overrides,
+  }
+}
 
 describe('BoardPage', () => {
   it('renders kanban columns by status and places cards in the right column', async () => {
@@ -280,6 +327,70 @@ describe('BoardPage', () => {
     expect(mocked.transitionIssue).not.toHaveBeenCalled()
   })
 
+  it('renders kanban columns from the workspace status directory', async () => {
+    vi.mocked(listStatuses).mockResolvedValue([
+      makeStatus({ name: 'todo', category: 'todo', position: 0 }),
+      makeStatus({ name: 'doing', category: 'in_progress', position: 1 }),
+      makeStatus({ name: 'qa_review', category: 'in_review', position: 2 }),
+      makeStatus({ name: 'shipped', category: 'done', position: 3 }),
+    ])
+    mocked.listIssues.mockResolvedValue([
+      makeIssue({ id: 'a', title: 'qa card', status: 'qa_review' }),
+    ])
+    renderPage()
+
+    const qaColumn = await screen.findByTestId('column-qa_review')
+    expect(within(qaColumn).getByText('qa card')).toBeInTheDocument()
+    // columns follow the directory: custom ones appear, dropped built-ins go
+    expect(screen.getByTestId('column-doing')).toBeInTheDocument()
+    expect(screen.queryByTestId('column-backlog')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('column-blocked')).not.toBeInTheDocument()
+    // cards offer exactly the directory statuses in their transition select
+    expect(within(qaColumn).getByRole('option', { name: 'qa_review' })).toBeInTheDocument()
+    expect(within(qaColumn).getByRole('option', { name: '待办' })).toBeInTheDocument()
+    expect(within(qaColumn).queryByRole('option', { name: '阻塞' })).not.toBeInTheDocument()
+  })
+
+  it('falls back to the built-in columns when the directory request fails', async () => {
+    vi.mocked(listStatuses).mockRejectedValue(new Error('boom'))
+    renderPage()
+
+    expect(await screen.findByTestId('column-todo')).toBeInTheDocument()
+    expect(screen.getByTestId('column-blocked')).toBeInTheDocument()
+  })
+
+  it('adds a status through the directory manager and renders its column', async () => {
+    const withCustom = [
+      ...DEFAULT_DIRECTORY,
+      makeStatus({ name: 'qa_review', category: 'in_review', position: 7 }),
+    ]
+    vi.mocked(upsertStatus).mockResolvedValue(withCustom)
+    renderPage()
+    await screen.findByTestId('column-todo')
+
+    await userEvent.click(screen.getByTestId('toggle-statuses'))
+    await userEvent.type(screen.getByTestId('dir-name'), 'qa_review')
+    await userEvent.selectOptions(screen.getByTestId('dir-category'), 'in_review')
+    await userEvent.click(screen.getByTestId('dir-submit'))
+
+    expect(vi.mocked(upsertStatus)).toHaveBeenCalledWith('p1', 'qa_review', 'in_review')
+    expect(await screen.findByTestId('column-qa_review')).toBeInTheDocument()
+  })
+
+  it('deletes a status through the directory manager and drops its column', async () => {
+    vi.mocked(deleteStatus).mockResolvedValue(DEFAULT_DIRECTORY.filter((s) => s.name !== 'blocked'))
+    renderPage()
+    await screen.findByTestId('column-blocked')
+
+    await userEvent.click(screen.getByTestId('toggle-statuses'))
+    await userEvent.click(screen.getByTestId('dir-delete-blocked'))
+
+    expect(vi.mocked(deleteStatus)).toHaveBeenCalledWith('p1', 'blocked')
+    await vi.waitFor(() => {
+      expect(screen.queryByTestId('column-blocked')).not.toBeInTheDocument()
+    })
+  })
+
   it('shows the error message when loading fails', async () => {
     mocked.listIssues.mockRejectedValue(new Error('加载失败'))
     renderPage()
@@ -319,6 +430,50 @@ describe('BoardPage', () => {
     expect(await screen.findByTestId('artifacts-empty-a')).toBeInTheDocument()
   })
 
+  it('hides the property filter when the project has no select properties', async () => {
+    vi.mocked(listPropertyDefinitions).mockResolvedValue([
+      makeDef({ id: 'prop2', name: '备注', type: 'text', options: [] }),
+    ])
+    renderPage()
+
+    await screen.findByTestId('board')
+
+    expect(screen.queryByTestId('filter-property')).not.toBeInTheDocument()
+  })
+
+  it('filters the board by a select property', async () => {
+    vi.mocked(listPropertyDefinitions).mockResolvedValue([makeDef()])
+    vi.mocked(listProjectIssueProperties).mockResolvedValue([
+      { issue_id: 'a', property_id: 'prop1', value: '前端' },
+      { issue_id: 'b', property_id: 'prop1', value: '后端' },
+    ])
+    mocked.listIssues.mockResolvedValue([
+      makeIssue({ id: 'a', title: '前端卡', status: 'todo' }),
+      makeIssue({ id: 'b', title: '后端卡', status: 'todo' }),
+    ])
+    renderPage()
+
+    const filter = await screen.findByTestId('filter-property')
+    await userEvent.selectOptions(filter, 'prop1|后端')
+
+    expect(screen.queryByTestId('card-a')).not.toBeInTheDocument()
+    expect(screen.getByTestId('card-b')).toBeInTheDocument()
+
+    await userEvent.selectOptions(filter, '')
+
+    expect(screen.getByTestId('card-a')).toBeInTheDocument()
+    expect(screen.getByTestId('card-b')).toBeInTheDocument()
+  })
+
+  it('hides the property filter for multi_select-only definitions', async () => {
+    vi.mocked(listPropertyDefinitions).mockResolvedValue([
+      makeDef({ id: 'prop3', name: '标签', type: 'multi_select', options: ['x', 'y'] }),
+    ])
+    renderPage()
+
+    await screen.findByTestId('board')
+
+    expect(screen.queryByTestId('filter-property')).not.toBeInTheDocument()
   it('searches issues by keyword', async () => {
     mocked.listIssues.mockResolvedValue([makeIssue({ id: 'a', title: 'card a' })])
     renderPage()

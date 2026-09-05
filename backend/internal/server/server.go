@@ -24,6 +24,7 @@ import (
 	"specpowers/backend/internal/llm"
 	"specpowers/backend/internal/notification"
 	"specpowers/backend/internal/project"
+	"specpowers/backend/internal/property"
 	"specpowers/backend/internal/skill"
 	"specpowers/backend/internal/store/postgres"
 	"specpowers/backend/internal/workflow"
@@ -93,23 +94,30 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	comments := postgres.NewCommentStore(pool)
 	attachments := postgres.NewAttachmentStore(pool)
 	metadata := postgres.NewIssueMetadataStore(pool)
+	properties := postgres.NewPropertyStore(pool)
 	changes := postgres.NewChangeStore(pool)
 	artifacts := postgres.NewArtifactStore(pool)
 	taskMappings := postgres.NewTaskMappingStore(pool)
 	agents := postgres.NewAgentStore(pool)
 	runs := postgres.NewRunStore(pool)
 	runLogs := postgres.NewRunLogStore(pool)
+	subscribers := postgres.NewIssueSubscriberStore(pool)
 	issueEvents := postgres.NewIssueEventStore(pool)
 
 	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
 	notificationStore := postgres.NewNotificationStore(pool)
 	notificationSvc := notification.NewService(notificationStore)
 	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
-	issueService := issue.NewService(issues, projects, users).WithEventStore(issueEvents)
+	issueService := issue.NewService(issues, projects, users).
+		WithStatusStore(postgres.NewWorkspaceStatusStore(pool))
+		WithSubscribers(subscribers).
+		WithNotifier(notificationSvc).
+    WithEventStore(issueEvents)
 	// Mention auto-claim: comments mentioning an agent enqueue its run.
 	mentionTrigger := agent.NewMentionTrigger(agents, runs)
 	collabSvc := collab.NewService(issues, projects, comments, attachments, metadata, cfg.AttachmentDir).
 		WithNotifier(notificationSvc).
+		WithSubscribers(subscribers, users).
 		WithUserDirectory(users).
 		WithCommentObserver(func(ctx context.Context, c *domain.IssueComment) {
 			if err := mentionTrigger.OnComment(ctx, c.IssueID, c.AuthorID, c.Content); err != nil {
@@ -118,12 +126,15 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 		})
 	issueHandler := issue.NewHandler(issueService, tokens).WithCollab(
 		collab.NewHandler(collabSvc, tokens).Routes(),
+	).WithProperties(
+		property.NewHandler(property.NewService(properties, projects, issues), tokens).ValueRoutes(),
 	)
+	propertyHandler := property.NewHandler(property.NewService(properties, projects, issues), tokens)
 	projectHandler := project.NewHandler(
 		project.NewService(projects, users, members, workspaces),
 		tokens,
 		issueHandler.Routes(),
-	)
+	).WithProperties(propertyHandler.DefinitionRoutes())
 	workflowService := workflow.NewService(changes, artifacts, taskMappings, issues, projects)
 	workflowService = workflowService.WithWaker(issues)
 	runTrigger := agent.NewTrigger(agents, runs)
@@ -182,10 +193,13 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 		Skills:      skillRegistry,
 		WorkDir:     cfg.AgentWorkDir,
 		Logs:        runLogs,
+		Usage:       runs,
 		Flow:        agent.NewWorkflowFlow(workflowService),
 		MentionHook: mentionTrigger.OnComment,
 	})
-	queue := agent.NewQueue(runs, runLogs, agents, executor).WithNotifier(notificationSvc, issues)
+	queue := agent.NewQueue(runs, runLogs, agents, executor).
+		WithNotifier(notificationSvc, issues).
+		WithSubscribers(subscribers)
 	issueService = issueService.WithRunTrigger(runTrigger.WithNotifier(notificationSvc))
 	// Long-lived credentials for locally registered agent runtimes (sp agent
 	// register). Revocation is deleting the agent.

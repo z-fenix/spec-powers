@@ -20,12 +20,13 @@ type fakeLLM struct {
 	calls []string // user prompts, in call order
 }
 
-func (f *fakeLLM) Complete(_ context.Context, system, user string) (string, error) {
+func (f *fakeLLM) Complete(_ context.Context, system, user string) (llm.Completion, error) {
 	f.calls = append(f.calls, user)
 	if f.fn == nil {
-		return "ok", nil
+		return llm.Completion{Text: "ok"}, nil
 	}
-	return f.fn(len(f.calls), system, user)
+	text, err := f.fn(len(f.calls), system, user)
+	return llm.Completion{Text: text}, err
 }
 
 type splitChanges struct {

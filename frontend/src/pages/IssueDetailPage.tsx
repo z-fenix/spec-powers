@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   addComment,
+  addSubscriber,
   deleteMetadata,
   downloadAttachment,
   getIssue,
@@ -10,6 +11,8 @@ import {
   listComments,
   listIssueEvents,
   listMetadata,
+  listSubscribers,
+  removeSubscriber,
   setMetadata,
   transitionIssue,
   updateIssue,
@@ -19,13 +22,25 @@ import {
   type IssueComment,
   type IssueEvent,
   type MetadataEntry,
+  type Subscriber,
 } from '../api/issues'
 import { listAgents } from '../api/agents'
 import { ApiError } from '../api/client'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
+import {
+  decodeMultiSelect,
+  encodeMultiSelect,
+  listIssueProperties,
+  listPropertyDefinitions,
+  setIssueProperty,
+  type IssuePropertyValue,
+  type PropertyDefinition,
+} from '../api/properties'
 import { StatusIcon } from '../components/StatusIcon'
 import { WorkflowProgress } from '../components/WorkflowProgress'
 import { ArtifactViewer } from '../components/ArtifactViewer'
+import { IssueUsagePanel } from '../components/Usage'
+import { MentionText } from '../components/MentionText'
 import { MentionInput, type MentionCandidate } from '../components/MentionInput'
 import { renderMarkdown } from '../lib/markdown'
 
@@ -254,6 +269,182 @@ function MetadataPanel({
   )
 }
 
+function PropertyValueEditor({
+  projectId,
+  issueId,
+  def,
+  value,
+  onChanged,
+}: {
+  projectId: string
+  issueId: string
+  def: PropertyDefinition
+  value: string
+  onChanged: () => void
+}) {
+  const [error, setError] = useState('')
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+
+  const save = (v: string) => {
+    setError('')
+    setIssueProperty(projectId, issueId, def.id, v)
+      .then(onChanged)
+      .catch((err) => setError(errorMessage(err, '保存属性失败')))
+  }
+
+  const testId = `property-input-${def.id}`
+  let editor: ReactNode
+  switch (def.type) {
+    case 'select':
+      editor = (
+        <select
+          data-testid={testId}
+          value={value}
+          onChange={(e) => save(e.target.value)}
+        >
+          <option value="">未设置</option>
+          {def.options.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      )
+      break
+    case 'multi_select': {
+      const picked = decodeMultiSelect(value)
+      const toggle = (o: string, on: boolean) => {
+        const next = on ? [...picked, o] : picked.filter((v) => v !== o)
+        save(encodeMultiSelect(next))
+      }
+      editor = (
+        <span data-testid={testId}>
+          {def.options.map((o) => (
+            <label key={o}>
+              <input
+                type="checkbox"
+                checked={picked.includes(o)}
+                onChange={(e) => toggle(o, e.target.checked)}
+              />{' '}
+              {o}
+            </label>
+          ))}
+        </span>
+      )
+      break
+    }
+    case 'checkbox':
+      editor = (
+        <input
+          data-testid={testId}
+          type="checkbox"
+          checked={value === 'true'}
+          onChange={(e) => save(e.target.checked ? 'true' : 'false')}
+        />
+      )
+      break
+    case 'number':
+      editor = (
+        <input
+          data-testid={testId}
+          type="number"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => draft !== value && save(draft)}
+        />
+      )
+      break
+    case 'date':
+      editor = (
+        <input
+          data-testid={testId}
+          type="date"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => draft !== value && save(draft)}
+        />
+      )
+      break
+    default:
+      editor = (
+        <input
+          data-testid={testId}
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => draft !== value && save(draft)}
+        />
+      )
+  }
+
+  return (
+    <li data-testid={`property-row-${def.id}`}>
+      <strong>{def.name}</strong>{' '}
+      <span className="badge">{def.type}</span> {editor}
+      {error && <span role="alert"> {error}</span>}
+    </li>
+  )
+}
+
+function PropertyValuesPanel({
+  projectId,
+  issueId,
+}: {
+  projectId: string
+  issueId: string
+}) {
+  const [defs, setDefs] = useState<PropertyDefinition[] | null>(null)
+  const [values, setValues] = useState<IssuePropertyValue[] | null>(null)
+
+  const loadValues = useCallback(
+    () =>
+      listIssueProperties(projectId, issueId)
+        .then(setValues)
+        .catch(() => setValues([])),
+    [projectId, issueId],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    listPropertyDefinitions(projectId)
+      .then((list) => {
+        if (!cancelled) setDefs(list ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setDefs([])
+      })
+    loadValues()
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, issueId, loadValues])
+
+  if (defs !== null && defs.length === 0) return null
+  if (defs === null || values === null) return null
+
+  const valueOf = (propertyId: string) =>
+    values.find((v) => v.property_id === propertyId)?.value ?? ''
+
+  return (
+    <div data-testid="property-panel">
+      <h3>属性</h3>
+      <ul>
+        {defs.map((d) => (
+          <PropertyValueEditor
+            key={d.id}
+            projectId={projectId}
+            issueId={issueId}
+            def={d}
+            value={valueOf(d.id)}
+            onChanged={loadValues}
+          />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function AttachmentPanel({
   projectId,
   issueId,
@@ -317,12 +508,78 @@ function AttachmentPanel({
   )
 }
 
+function SubscribersPanel({
+  projectId,
+  issueId,
+  subscribers,
+  onChanged,
+}: {
+  projectId: string
+  issueId: string
+  subscribers: Subscriber[]
+  onChanged: () => void
+}) {
+  const [email, setEmail] = useState('')
+  const [error, setError] = useState('')
+
+  const onAdd = () => {
+    if (!email.trim()) return
+    setError('')
+    addSubscriber(projectId, issueId, email)
+      .then(() => {
+        setEmail('')
+        onChanged()
+      })
+      .catch((err) => setError(errorMessage(err, '添加订阅者失败')))
+  }
+
+  const onRemove = (userId: string) => {
+    setError('')
+    removeSubscriber(projectId, issueId, userId)
+      .then(onChanged)
+      .catch((err) => setError(errorMessage(err, '移除订阅者失败')))
+  }
+
+  return (
+    <div data-testid="subscribers">
+      <h3>订阅者</h3>
+      {error && <p role="alert">{error}</p>}
+      {subscribers.length === 0 && <p>暂无订阅者。</p>}
+      <ul>
+        {subscribers.map((s) => (
+          <li key={s.user_id} data-testid={`subscriber-${s.user_id}`}>
+            {s.display_name || s.email}{' '}
+            <button
+              className="btn btn-ghost btn-sm"
+              data-testid={`subscriber-remove-${s.user_id}`}
+              onClick={() => onRemove(s.user_id)}
+            >
+              移除
+            </button>
+          </li>
+        ))}
+      </ul>
+      <input
+        className="input"
+        data-testid="subscriber-email"
+        placeholder="邮箱"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+      <button className="btn btn-outline btn-sm" data-testid="subscriber-add" onClick={onAdd}>
+        添加
+      </button>
+    </div>
+  )
+}
+
 export function IssueDetailPage() {
   const { id = '', issueId = '' } = useParams()
   const [issue, setIssue] = useState<Issue | null>(null)
   const [comments, setComments] = useState<IssueComment[] | null>(null)
   const [attachments, setAttachments] = useState<Attachment[] | null>(null)
   const [metadata, setMetadataList] = useState<MetadataEntry[] | null>(null)
+  const [subscribers, setSubscribers] = useState<Subscriber[] | null>(null)
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState('')
@@ -362,6 +619,14 @@ export function IssueDetailPage() {
     [id, issueId],
   )
 
+  const loadSubscribers = useCallback(
+    () =>
+      listSubscribers(id, issueId)
+        .then(setSubscribers)
+        .catch(() => setSubscribers([])),
+    [id, issueId],
+  )
+
   useEffect(() => {
     setIssue(null)
     setError('')
@@ -369,7 +634,8 @@ export function IssueDetailPage() {
     loadComments()
     loadAttachments()
     loadMetadata()
-  }, [loadIssue, loadComments, loadAttachments, loadMetadata])
+    loadSubscribers()
+  }, [loadIssue, loadComments, loadAttachments, loadMetadata, loadSubscribers])
 
   useEffect(() => {
     let cancelled = false
@@ -431,7 +697,7 @@ export function IssueDetailPage() {
     addComment(id, issueId, content, parentId).then(() => loadComments())
 
   if (error && !issue) return <p role="alert">{error}</p>
-  if (!issue || comments === null || attachments === null || metadata === null) {
+  if (!issue || comments === null || attachments === null || metadata === null || subscribers === null) {
     return <p>加载中…</p>
   }
 
@@ -510,6 +776,7 @@ export function IssueDetailPage() {
             <div className="detail-section">
               <h3>时间线</h3>
               <TimelinePanel projectId={id} issueId={issueId} />
+              <IssueUsagePanel issueId={issueId} />
             </div>
 
             <div className="detail-section">
@@ -591,6 +858,12 @@ export function IssueDetailPage() {
             attachments={attachments}
             onChanged={loadAttachments}
           />
+          <SubscribersPanel
+            projectId={id}
+            issueId={issueId}
+            subscribers={subscribers}
+            onChanged={loadSubscribers}
+          />
           <MetadataPanel
             projectId={id}
             issueId={issueId}
@@ -599,6 +872,46 @@ export function IssueDetailPage() {
           />
         </aside>
       </div>
+
+      <PropertyValuesPanel projectId={id} issueId={issueId} />
+
+      <WorkflowProgress issueId={issueId} />
+      <ArtifactViewer issueId={issueId} />
+
+      <h3>评论</h3>
+      {roots.map((c) => (
+        <CommentThread
+          key={c.id}
+          comment={c}
+          replies={repliesOf(c.id)}
+          onReply={onReply}
+        />
+      ))}
+      <form onSubmit={onSubmitComment} className="inline-form">
+        <input
+          data-testid="new-comment"
+          placeholder="写评论…"
+          value={newComment}
+          onChange={(e) => setNewComment(e.target.value)}
+        />
+        <button type="submit" data-testid="submit-comment">
+          评论
+        </button>
+      </form>
+
+      <AttachmentPanel
+        projectId={id}
+        issueId={issueId}
+        attachments={attachments}
+        onChanged={loadAttachments}
+      />
+      <MetadataPanel
+        projectId={id}
+        issueId={issueId}
+        entries={metadata}
+        onChanged={loadMetadata}
+      />
+    </section>
     </div>
   )
 }

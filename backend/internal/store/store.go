@@ -35,6 +35,20 @@ type MemberStore interface {
 	ListWorkspaceIDsForUser(ctx context.Context, userID string) ([]string, error)
 }
 
+// WorkspaceStatusStore is a workspace's status directory: the set of status
+// names issues may carry plus the category each maps to. A workspace with no
+// stored rows uses the built-in defaults (domain.DefaultStatusDirectory);
+// the first mutation materializes them.
+type WorkspaceStatusStore interface {
+	// ListStatuses returns the directory ordered by position; built-in
+	// defaults when the workspace has no stored rows.
+	ListStatuses(ctx context.Context, workspaceID string) ([]domain.WorkspaceStatus, error)
+	// UpsertStatus creates or updates one entry by (workspace, name).
+	UpsertStatus(ctx context.Context, s *domain.WorkspaceStatus) (*domain.WorkspaceStatus, error)
+	// DeleteStatus removes one entry; ErrNotFound when missing.
+	DeleteStatus(ctx context.Context, workspaceID, name string) error
+}
+
 type ProjectStore interface {
 	CreateProject(ctx context.Context, workspaceID, name, description, createdBy string) (*domain.Project, error)
 	GetProject(ctx context.Context, id string) (*domain.Project, error)
@@ -105,6 +119,28 @@ type IssueMetadataStore interface {
 	DeleteIssueMetadata(ctx context.Context, issueID, key string) error
 }
 
+// SubscriberStore is the per-issue subscriber list. Add is idempotent;
+// Remove reports ErrNotFound for a user that is not subscribed. List returns
+// the subscribers' user rows, oldest subscription first.
+type SubscriberStore interface {
+	AddIssueSubscriber(ctx context.Context, issueID, userID string) error
+	RemoveIssueSubscriber(ctx context.Context, issueID, userID string) error
+	ListIssueSubscribers(ctx context.Context, issueID string) ([]domain.User, error)
+// PropertyStore covers project-level custom property definitions and the
+// per-issue values assigned to them. SetIssueProperty is an upsert on
+// (issue_id, property_id); deleting a definition cascades to its values.
+type PropertyStore interface {
+	CreatePropertyDefinition(ctx context.Context, d *domain.PropertyDefinition) (*domain.PropertyDefinition, error)
+	GetPropertyDefinition(ctx context.Context, id string) (*domain.PropertyDefinition, error)
+	ListPropertyDefinitions(ctx context.Context, projectID string) ([]domain.PropertyDefinition, error)
+	UpdatePropertyDefinition(ctx context.Context, d *domain.PropertyDefinition) (*domain.PropertyDefinition, error)
+	DeletePropertyDefinition(ctx context.Context, id string) error
+	SetIssueProperty(ctx context.Context, v *domain.IssuePropertyValue) (*domain.IssuePropertyValue, error)
+	ListIssueProperties(ctx context.Context, issueID string) ([]domain.IssuePropertyValue, error)
+	ListIssuePropertiesForProject(ctx context.Context, projectID string) ([]domain.IssuePropertyValue, error)
+	DeleteIssueProperty(ctx context.Context, issueID, propertyID string) error
+}
+
 type AgentStore interface {
 	CreateAgent(ctx context.Context, a *domain.Agent) (*domain.Agent, error)
 	GetAgent(ctx context.Context, id string) (*domain.Agent, error)
@@ -137,6 +173,15 @@ type RunStore interface {
 	// FinishRun sets a run's terminal status ("done" or "failed") with an
 	// optional error message and stamps finished_at.
 	FinishRun(ctx context.Context, id, status, errMsg string) (*domain.Run, error)
+	// RecordRunUsage appends one LLM completion's token usage to the run.
+	// Called once per completion so usage survives a run that later fails.
+	RecordRunUsage(ctx context.Context, runID string, promptTokens, completionTokens int64) error
+	// IssueUsage aggregates the token usage of every completion of one
+	// issue's runs.
+	IssueUsage(ctx context.Context, issueID string) (*domain.UsageTotals, error)
+	// ProjectUsage aggregates token usage per issue of one project, ordered
+	// by issue title. Issues without recorded usage are omitted.
+	ProjectUsage(ctx context.Context, projectID string) ([]domain.IssueUsage, error)
 }
 
 type RunLogStore interface {

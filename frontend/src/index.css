@@ -1560,6 +1560,10 @@ textarea::placeholder {
   word-break: break-word;
 }
 
+.usage-totals {
+  margin: 4px 0 0;
+  color: var(--muted-foreground, #57606a);
+  font-size: var(--text-caption, 12px);
 /* ---- mentions ---- */
 .mention {
   display: inline-block;

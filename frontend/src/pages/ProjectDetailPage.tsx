@@ -83,6 +83,20 @@ export function ProjectDetailPage() {
       .catch((err) => setError(errorMessage(err, '保存上下文失败')))
   }
 
+  const onToggleArchive = () => {
+    if (!project) return
+    setError('')
+    apiFetch<{ project: Project }>(`/projects/${id}/archive`, {
+      method: 'POST',
+      body: { archived: !project.archived },
+    })
+      .then(() => {
+        flash(project.archived ? '已恢复' : '已归档')
+        load()
+      })
+      .catch((err) => setError(errorMessage(err, '操作失败')))
+  }
+
   if (error && !project) return <p role="alert">{error}</p>
   if (!project || resources === null) return <p>加载中…</p>
 
@@ -97,6 +111,9 @@ export function ProjectDetailPage() {
         <Link data-testid="board-link" to={`/projects/${id}/board`}>
           Issue 看板
         </Link>
+        <button data-testid="toggle-archive" onClick={onToggleArchive}>
+          {project.archived ? '恢复' : '归档'}
+        </button>
       </p>
       {error && (
         <p role="alert" data-testid="detail-error">

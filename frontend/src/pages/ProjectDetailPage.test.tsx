@@ -103,6 +103,35 @@ describe('ProjectDetailPage', () => {
     )
   })
 
+  it('archives the project from the detail page', async () => {
+    mockInitialLoad()
+    mockedFetch
+      .mockResolvedValueOnce({ project: { ...project, archived: true } })
+      .mockResolvedValueOnce({ project: { ...project, archived: true } })
+      .mockResolvedValueOnce({ resources: [resource] })
+      .mockResolvedValueOnce({ context: { content: 'team notes' } })
+    renderPage()
+
+    await userEvent.click(await screen.findByTestId('toggle-archive'))
+
+    expect(mockedFetch).toHaveBeenCalledWith(
+      '/projects/p1/archive',
+      expect.objectContaining({ method: 'POST', body: { archived: true } }),
+    )
+    expect((await screen.findAllByText('已归档')).length).toBeGreaterThan(0)
+  })
+
+  it('offers restore for an archived project', async () => {
+    mockedFetch
+      .mockResolvedValueOnce({ project: { ...project, archived: true } })
+      .mockResolvedValueOnce({ resources: [] })
+      .mockResolvedValueOnce({ context: { content: '' } })
+    renderPage()
+
+    expect(await screen.findByTestId('toggle-archive')).toHaveTextContent('恢复')
+    expect(screen.getByText('已归档')).toBeInTheDocument()
+  })
+
   it('shows the api error when adding an invalid resource', async () => {
     mockInitialLoad()
     mockedFetch.mockRejectedValueOnce(new ApiError(400, 'invalid_request', 'invalid github_repo pointer'))

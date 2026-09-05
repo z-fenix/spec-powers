@@ -4,6 +4,7 @@ import {
   createIssue,
   listIssues,
   transitionIssue,
+  updateIssue,
   type Issue,
 } from '../api/issues'
 import { getChangeByIssue, listArtifacts, type Artifact } from '../api/workflow'
@@ -27,12 +28,35 @@ interface IssueCardProps {
   issue: Issue
   projectId: string
   onTransition: (issueId: string, status: string) => void
+  onDragStart: (issueId: string) => void
+  onDropOnCard: (dragId: string, targetIssueId: string) => void
 }
 
-function IssueCard({ issue, projectId, onTransition }: IssueCardProps) {
+function IssueCard({
+  issue,
+  projectId,
+  onTransition,
+  onDragStart,
+  onDropOnCard,
+}: IssueCardProps) {
   const [showArtifacts, setShowArtifacts] = useState(false)
   return (
-    <div className="issue-card" data-testid={`card-${issue.id}`}>
+    <div
+      className="issue-card"
+      data-testid={`card-${issue.id}`}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', issue.id)
+        onDragStart(issue.id)
+      }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        const dragId = e.dataTransfer.getData('text/plain')
+        if (dragId && dragId !== issue.id) onDropOnCard(dragId, issue.id)
+      }}
+    >
       <Link to={`/projects/${projectId}/issues/${issue.id}`}>{issue.title}</Link>
       {issue.stage > 0 && <span className="badge">S{issue.stage}</span>}
       <select
@@ -153,6 +177,7 @@ export function BoardPage() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [stage, setStage] = useState('')
+  const [dragIssueId, setDragIssueId] = useState('')
 
   const load = useCallback(
     (filter?: { status?: string; stage?: number }) => {
@@ -183,6 +208,46 @@ export function BoardPage() {
     transitionIssue(id, issueId, status)
       .then(() => load())
       .catch((err) => setError(errorMessage(err, '状态流转失败')))
+  }
+
+  // Dropping a card in a column either flows its status (cross-column) or
+  // reorders it within the column (same-column), persisting positions.
+  const onDropInColumn = (dragId: string, targetStatus: string, targetIndex: number | null) => {
+    const all = issues ?? []
+    const dragged = all.find((i) => i.id === dragId)
+    if (!dragged) return
+    if (dragged.status !== targetStatus) {
+      onTransition(dragId, targetStatus)
+      return
+    }
+    const column = all.filter((i) => i.status === targetStatus)
+    const from = column.findIndex((i) => i.id === dragId)
+    const to =
+      targetIndex === null
+        ? column.length - 1
+        : Math.max(0, Math.min(targetIndex, column.length - 1))
+    if (from < 0 || from === to) return
+    const reordered = column.slice()
+    reordered.splice(from, 1)
+    reordered.splice(to, 0, dragged)
+    const updates = reordered
+      .map((issue, idx) => ({ issue, idx }))
+      .filter(({ issue, idx }) => issue.position !== idx)
+      .map(({ issue, idx }) => updateIssue(id, issue.id, { position: idx }))
+    const repositioned = reordered.map((issue, idx) =>
+      issue.position === idx ? issue : { ...issue, position: idx },
+    )
+    setIssues([...all.filter((i) => i.status !== targetStatus), ...repositioned])
+    Promise.all(updates)
+      .then(() => load())
+      .catch((err) => setError(errorMessage(err, '排序失败')))
+  }
+
+  const onDropOnCard = (dragId: string, targetIssueId: string) => {
+    const target = (issues ?? []).find((i) => i.id === targetIssueId)
+    if (!target) return
+    const column = (issues ?? []).filter((i) => i.status === target.status)
+    onDropInColumn(dragId, target.status, column.findIndex((i) => i.id === targetIssueId))
   }
 
   const onCreate = (e: FormEvent) => {
@@ -282,12 +347,29 @@ export function BoardPage() {
       ) : view === 'board' ? (
         <div className="board-columns">
           {STATUSES.map((s) => (
-            <div key={s} className="board-column" data-testid={`column-${s}`}>
+            <div
+              key={s}
+              className="board-column"
+              data-testid={`column-${s}`}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault()
+                const dragId = e.dataTransfer.getData('text/plain') || dragIssueId
+                if (dragId) onDropInColumn(dragId, s, null)
+              }}
+            >
               <h3>
                 {STATUS_LABELS[s]} <span className="count">{byStatus(visible, s).length}</span>
               </h3>
               {byStatus(visible, s).map((i) => (
-                <IssueCard key={i.id} issue={i} projectId={id} onTransition={onTransition} />
+                <IssueCard
+                  key={i.id}
+                  issue={i}
+                  projectId={id}
+                  onTransition={onTransition}
+                  onDragStart={setDragIssueId}
+                  onDropOnCard={onDropOnCard}
+                />
               ))}
             </div>
           ))}
@@ -300,7 +382,14 @@ export function BoardPage() {
               <div key={stageNum} data-testid={`stage-group-${stageNum}`}>
                 <h3>Stage {stageNum}</h3>
                 {byStage(stageNum).map((i) => (
-                  <IssueCard key={i.id} issue={i} projectId={id} onTransition={onTransition} />
+                  <IssueCard
+                    key={i.id}
+                    issue={i}
+                    projectId={id}
+                    onTransition={onTransition}
+                    onDragStart={setDragIssueId}
+                    onDropOnCard={onDropOnCard}
+                  />
                 ))}
               </div>
             ))}
@@ -311,5 +400,7 @@ export function BoardPage() {
 }
 
 function byStatus(issues: Issue[], status: string): Issue[] {
-  return issues.filter((i) => i.status === status)
+  return issues
+    .filter((i) => i.status === status)
+    .sort((a, b) => a.position - b.position)
 }

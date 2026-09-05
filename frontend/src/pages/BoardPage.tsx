@@ -394,7 +394,8 @@ export function BoardPage() {
         />
         {selectDefs.length > 0 && (
           <select
-            aria-label="属性筛选"
+              className="input"
+              aria-label="属性筛选"
             data-testid="filter-property"
             value={propertyFilter}
             onChange={(e) => setPropertyFilter(e.target.value)}
@@ -420,12 +421,13 @@ export function BoardPage() {
         <button data-testid="toggle-create" onClick={() => setShowCreate((v) => !v)}>
           新建 Issue
         </button>
-            <form onSubmit={onSearch} data-testid="board-search">
+            <form onSubmit={onSearch}  className="inline-form" data-testid="board-search">
                 <input
                     className="input"
-                    aria-label="搜索"
+                    aria-label="搜索 Issue"
                     data-testid="search-issues"
-                    placeholder="搜索 issue…"
+                    type="search"
+                    placeholder="搜索标题/描述/评论"
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
                 />

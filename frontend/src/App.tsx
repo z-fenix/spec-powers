@@ -12,6 +12,7 @@ import { MemberProfilePage } from './pages/MemberProfilePage'
 import { NotificationsPage } from './pages/NotificationsPage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { ProjectsPage } from './pages/ProjectsPage'
+import { SquadsPage } from './pages/SquadsPage'
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
             <Route path="/projects/:id/issues/:issueId" element={<IssueDetailPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/agents" element={<AgentsPage />} />
+            <Route path="/squads" element={<SquadsPage />} />
             <Route path="/webhooks" element={<WebhooksPage />} />
             <Route path="/autopilots" element={<AutopilotsPage />} />
             <Route path="/members/:userId" element={<MemberProfilePage />} />

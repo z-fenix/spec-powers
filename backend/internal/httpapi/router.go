@@ -41,6 +41,7 @@ type Deps struct {
 	Runs    http.Handler
 	Notifs  http.Handler
 	Runtime http.Handler
+	Squads  http.Handler
 	// Hooks is the unauthenticated inbound webhook endpoint (signature is
 	// the credential); Webhooks and Autopilots are the JWT management APIs.
 	Hooks      http.Handler
@@ -83,6 +84,9 @@ func NewRouter(deps Deps) http.Handler {
 		}
 		if deps.Runtime != nil {
 			r.Mount("/runtime", http.StripPrefix("/api/v1/runtime", deps.Runtime))
+		}
+		if deps.Squads != nil {
+			r.Mount("/squads", http.StripPrefix("/api/v1/squads", deps.Squads))
 		}
 		if deps.Webhooks != nil {
 			r.Mount("/webhooks", http.StripPrefix("/api/v1/webhooks", deps.Webhooks))

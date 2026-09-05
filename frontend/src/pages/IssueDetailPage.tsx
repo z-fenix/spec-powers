@@ -27,6 +27,7 @@ import {
 import { listAgents } from '../api/agents'
 import { ApiError } from '../api/client'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
+import { StatusIcon } from '../components/StatusIcon'
 import {
   decodeMultiSelect,
   encodeMultiSelect,
@@ -36,7 +37,6 @@ import {
   type IssuePropertyValue,
   type PropertyDefinition,
 } from '../api/properties'
-import { StatusIcon } from '../components/StatusIcon'
 import { WorkflowProgress } from '../components/WorkflowProgress'
 import { ArtifactViewer } from '../components/ArtifactViewer'
 import { IssueUsagePanel } from '../components/Usage'
@@ -883,7 +883,6 @@ export function IssueDetailPage() {
           />
         </aside>
       </div>
-
       <PropertyValuesPanel projectId={id} issueId={issueId} />
 
       <WorkflowProgress issueId={issueId} />

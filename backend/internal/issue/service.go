@@ -2,6 +2,7 @@ package issue
 
 import (
 	"context"
+	"errors"
 	"log"
 	"slices"
 	"strconv"
@@ -32,10 +33,23 @@ type Service struct {
 	notifier    notification.Sink
 	// events records the issue timeline; nil disables event recording.
 	events store.IssueEventStore
+	// squads resolves squad assignees; nil disables squad assignment.
+	squads SquadLookup
+}
+
+// SquadLookup resolves squad assignees without importing the squad package.
+type SquadLookup interface {
+	GetSquad(ctx context.Context, id string) (*domain.Squad, error)
 }
 
 func NewService(issues store.IssueStore, projects store.ProjectStore, users store.UserStore) *Service {
 	return &Service{issues: issues, projects: projects, users: users}
+}
+
+// WithSquadLookup enables assigning issues to squads.
+func (s *Service) WithSquadLookup(l SquadLookup) *Service {
+	s.squads = l
+	return s
 }
 
 // WithStatusStore installs the workspace status directory store; without it
@@ -65,6 +79,7 @@ func (s *Service) WithSubscribers(sub store.SubscriberStore) *Service {
 func (s *Service) WithNotifier(n notification.Sink) *Service {
 	s.notifier = n
 	return s
+	}
 // WithEventStore installs the timeline event store; issue creation, field
 // updates and status transitions then append events.
 func (s *Service) WithEventStore(e store.IssueEventStore) *Service {
@@ -196,10 +211,61 @@ func (s *Service) validateAssignee(ctx context.Context, assigneeID string) error
 	if assigneeID == "" {
 		return nil
 	}
-	if _, err := s.users.GetUser(ctx, assigneeID); err == store.ErrNotFound {
-		return httpapi.ErrNotFound("assignee not found")
-	} else if err != nil {
+	if _, err := s.users.GetUser(ctx, assigneeID); err == nil {
+		return nil
+	} else if !errors.Is(err, store.ErrNotFound) {
 		return httpapi.ErrInternal("lookup assignee failed")
+	}
+	if s.squads != nil {
+		if _, err := s.squads.GetSquad(ctx, assigneeID); err == nil {
+			return nil
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return httpapi.ErrInternal("lookup squad assignee failed")
+		}
+	}
+	return httpapi.ErrNotFound("assignee not found")
+}
+
+// isSquadAssignee reports whether the assignee id refers to a squad.
+func (s *Service) isSquadAssignee(ctx context.Context, assigneeID string) bool {
+	if assigneeID == "" || s.squads == nil {
+		return false
+	}
+	_, err := s.squads.GetSquad(ctx, assigneeID)
+	return err == nil
+}
+
+// squadLeaderOverride reports whether the actor is the leader of the squad
+// currently assigned to the issue and only touches the assignee. Such a
+// change is the leader's claim/reassign right and does not require project
+// membership.
+func (s *Service) squadLeaderOverride(ctx context.Context, userID string, current *domain.Issue, in UpdateInput) bool {
+	if userID == "" || !s.isSquadAssignee(ctx, current.AssigneeID) {
+		return false
+	}
+	sq, err := s.squads.GetSquad(ctx, current.AssigneeID)
+	if err != nil || sq.LeaderID != userID {
+		return false
+	}
+	return in.Title == nil && in.Description == nil && in.Priority == nil &&
+		in.DueDate == nil && in.Labels == nil && in.Stage == nil &&
+		in.Position == nil && in.ParentID == nil
+}
+
+// requireLeaderForSquadReassign guards claim/reassign: when an issue is
+// currently assigned to a squad, only that squad's leader may change the
+// assignee (claim it or hand it off). Direct assignment TO a squad stays
+// open to project members.
+func (s *Service) requireLeaderForSquadReassign(ctx context.Context, userID string, current *domain.Issue, newAssigneeID string) error {
+	if newAssigneeID == current.AssigneeID || !s.isSquadAssignee(ctx, current.AssigneeID) {
+		return nil
+	}
+	sq, err := s.squads.GetSquad(ctx, current.AssigneeID)
+	if err != nil {
+		return httpapi.ErrInternal("lookup squad assignee failed")
+	}
+	if sq.LeaderID != userID {
+		return httpapi.ErrForbidden("only the squad leader can reassign")
 	}
 	return nil
 }
@@ -289,9 +355,19 @@ func (s *Service) ListIssues(ctx context.Context, userID, projectID string, filt
 }
 
 func (s *Service) UpdateIssue(ctx context.Context, userID, issueID string, in UpdateInput) (*domain.Issue, error) {
-	current, err := s.requireProjectIssue(ctx, userID, issueID)
+	current, err := s.issues.GetIssue(ctx, issueID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, httpapi.ErrNotFound("issue not found")
+	}
 	if err != nil {
-		return nil, err
+		return nil, httpapi.ErrInternal("get issue failed")
+	}
+	// Squad leaders claim or reassign their squad's issues without project
+	// membership — but only the assignee field.
+	if !s.squadLeaderOverride(ctx, userID, current, in) {
+		if err := s.requireProjectRole(ctx, userID, current.ProjectID, "member"); err != nil {
+			return nil, err
+		}
 	}
 	updated := *current
 	if in.Title != nil {
@@ -310,6 +386,9 @@ func (s *Service) UpdateIssue(ctx context.Context, userID, issueID string, in Up
 		updated.Priority = *in.Priority
 	}
 	if in.AssigneeID != nil {
+		if err := s.requireLeaderForSquadReassign(ctx, userID, current, *in.AssigneeID); err != nil {
+			return nil, err
+		}
 		if err := s.validateAssignee(ctx, *in.AssigneeID); err != nil {
 			return nil, err
 		}

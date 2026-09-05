@@ -26,6 +26,7 @@ import (
 	"specpowers/backend/internal/project"
 	"specpowers/backend/internal/property"
 	"specpowers/backend/internal/skill"
+	"specpowers/backend/internal/squad"
 	"specpowers/backend/internal/store/postgres"
 	"specpowers/backend/internal/workflow"
 )
@@ -103,6 +104,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	runLogs := postgres.NewRunLogStore(pool)
 	subscribers := postgres.NewIssueSubscriberStore(pool)
 	issueEvents := postgres.NewIssueEventStore(pool)
+	squads := postgres.NewSquadStore(pool)
 
 	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
 	notificationStore := postgres.NewNotificationStore(pool)
@@ -112,7 +114,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 		WithStatusStore(postgres.NewWorkspaceStatusStore(pool))
 		WithSubscribers(subscribers).
 		WithNotifier(notificationSvc).
-    WithEventStore(issueEvents)
+    WithEventStore(issueEvents).WithSquadLookup(squads)
 	// Mention auto-claim: comments mentioning an agent enqueue its run.
 	mentionTrigger := agent.NewMentionTrigger(agents, runs)
 	collabSvc := collab.NewService(issues, projects, comments, attachments, metadata, cfg.AttachmentDir).
@@ -137,7 +139,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	).WithProperties(propertyHandler.DefinitionRoutes())
 	workflowService := workflow.NewService(changes, artifacts, taskMappings, issues, projects)
 	workflowService = workflowService.WithWaker(issues)
-	runTrigger := agent.NewTrigger(agents, runs)
+	runTrigger := agent.NewTrigger(agents, runs).WithSquadRouter(squads)
 	workflowService = workflowService.WithWakeupHook(runTrigger)
 	workflowService = workflowService.WithCreator(issueService)
 	skillRegistry, err := skill.DefaultRegistry()
@@ -180,6 +182,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	workflowHandler := workflow.NewHandler(workflowService, tokens)
 	skillHandler := skill.NewHandler(skillRegistry, tokens)
 	notificationHandler := notification.NewHandler(notificationSvc, tokens)
+	squadHandler := squad.NewHandler(squad.NewService(squads, users), tokens)
 
 	// Agent runtime: definitions, run queue, LLM tool-loop executor and the
 	// issue-service trigger that enqueues runs on assignment / status change.
@@ -233,18 +236,19 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 
 	return &Server{
 		Handler: httpapi.NewRouter(httpapi.Deps{
-			Auth:       authHandler.Routes(),
-			Project:    projectHandler.Routes(),
-			Changes:    workflowHandler.Routes(),
-			Skills:     skillHandler.Routes(),
-			Agents:     agentHandler.AgentRoutes(),
-			Runs:       agentHandler.RunRoutes(),
-			Notifs:     notificationHandler.Routes(),
-			Runtime:    runtimeHandler.Routes(),
+			Auth:    authHandler.Routes(),
+			Project: projectHandler.Routes(),
+			Changes: workflowHandler.Routes(),
+			Skills:  skillHandler.Routes(),
+			Agents:  agentHandler.AgentRoutes(),
+			Runs:    agentHandler.RunRoutes(),
+			Notifs:  notificationHandler.Routes(),
+			Runtime: runtimeHandler.Routes(),
+			Squads:  squadHandler.Routes(),
 			Hooks:      automationHandler.HookRoutes(),
 			Webhooks:   automationHandler.WebhookRoutes(),
 			Autopilots: automationHandler.AutopilotRoutes(),
-			Static:     staticFromConfig(cfg),
+			Static:  staticFromConfig(cfg),
 		}),
 		pool:       pool,
 		ownsPool:   ownsPool,

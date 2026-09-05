@@ -406,3 +406,33 @@ type Autopilot struct {
 	NextRunAt        *time.Time
 	CreatedAt        time.Time
 }
+
+// Squad is a standing group of members (human users or agents) with a single
+// leader. Issues can be assigned to a squad; its leader then claims the
+// issue or reassigns it.
+type Squad struct {
+	ID          string
+	Name        string
+	Description string
+	LeaderID    string
+	CreatedBy   string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// SquadMember is one roster entry of a squad. UserID references a user row —
+// humans and agents alike, since agents are backed by user rows.
+type SquadMember struct {
+	SquadID   string
+	UserID    string
+	CreatedAt time.Time
+}
+
+// SquadMemberDetail is a squad roster entry resolved for display: the
+// member's display name and whether it is an agent identity.
+type SquadMemberDetail struct {
+	UserID      string
+	DisplayName string
+	IsAgent     bool
+	JoinedAt    time.Time
+}

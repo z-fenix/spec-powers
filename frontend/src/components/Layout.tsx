@@ -49,6 +49,21 @@ function IconHamburger() {
   )
 }
 
+function IconSquad() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="5.5" cy="5.5" r="2.25" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="11" cy="6.5" r="1.75" stroke="currentColor" strokeWidth="1.3" />
+      <path
+        d="M1.75 13c.4-2.2 1.9-3.5 3.75-3.5S8.85 10.8 9.25 13M10 9.75c1.6.1 2.9 1.1 3.5 2.75"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 function ThemeIcon({ resolved }: { resolved: 'light' | 'dark' }) {
   if (resolved === 'dark') {
     return (
@@ -113,6 +128,10 @@ export function Layout() {
             <NavLink to="/" end className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
               <IconFolder />
               项目
+            </NavLink>
+            <NavLink to="/squads" className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
+              <IconSquad />
+              小组
             </NavLink>
             <NotificationBell />
             <p className="nav-group-label">自动化</p>

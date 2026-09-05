@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../api/client'
+import { Modal } from '../components/Modal'
 import {
   createPropertyDefinition,
   deletePropertyDefinition,
@@ -8,7 +9,6 @@ import {
   PROPERTY_TYPES,
   type PropertyDefinition,
 } from '../api/properties'
-import { Modal } from '../components/Modal'
 import { ProjectUsagePanel } from '../components/Usage'
 import type { Project } from './ProjectsPage'
 
@@ -402,6 +402,8 @@ export function ProjectDetailPage() {
           </form>
         </Modal>
       )}
+
+      <PropertyDefinitionsPanel projectId={id} />
     </div>
   )
 }

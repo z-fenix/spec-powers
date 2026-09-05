@@ -402,8 +402,6 @@ export function ProjectDetailPage() {
           </form>
         </Modal>
       )}
-
-      <PropertyDefinitionsPanel projectId={id} />
     </div>
   )
 }

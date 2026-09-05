@@ -48,15 +48,15 @@ type userNameDirectory interface {
 }
 
 type Service struct {
-	issues      issueLookup
-	projects    projectAccess
-	comments    store.CommentStore
-	attachments store.AttachmentStore
-	metadata    store.IssueMetadataStore
-	subscribers store.SubscriberStore
-	users       userLookup
-	notifier    notification.Sink
-	users       userNameDirectory
+	issues        issueLookup
+	projects      projectAccess
+	comments      store.CommentStore
+	attachments   store.AttachmentStore
+	metadata      store.IssueMetadataStore
+	subscribers   store.SubscriberStore
+	users         userLookup
+	notifier      notification.Sink
+	userDirectory userNameDirectory
 	// commentObserver is called after every created comment (roots and
 	// replies); used by the agent runtime to claim @-mentions. Observer
 	// errors are non-fatal — the comment is already stored.
@@ -93,12 +93,13 @@ func (s *Service) WithNotifier(n notification.Sink) *Service {
 func (s *Service) WithSubscribers(subs store.SubscriberStore, users userLookup) *Service {
 	s.subscribers = subs
 	s.users = users
+	return s
 }
 
 // WithUserDirectory attaches the user directory used to resolve @-mentions
 // of human users in comment content.
 func (s *Service) WithUserDirectory(u userNameDirectory) *Service {
-	s.users = u
+	s.userDirectory = u
 	return s
 }
 
@@ -222,10 +223,10 @@ func (s *Service) notifyComment(ctx context.Context, i *domain.Issue, authorID, 
 // — their mention trigger enqueues runs instead. Best-effort: directory
 // errors only skip the notifications.
 func (s *Service) notifyMentions(ctx context.Context, i *domain.Issue, authorID, content string) {
-	if s.notifier == nil || s.users == nil {
+	if s.notifier == nil || s.userDirectory == nil {
 		return
 	}
-	users, err := s.users.ListUsers(ctx)
+	users, err := s.userDirectory.ListUsers(ctx)
 	if err != nil {
 		return
 	}

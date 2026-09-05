@@ -346,6 +346,13 @@ func (h *Handler) putStatus(w http.ResponseWriter, r *http.Request) {
 		Category: req.Category,
 		Position: req.Position,
 	})
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	httpapi.JSON(w, http.StatusOK, map[string]any{"statuses": toStatusDTOs(list)})
+}
+
 type issueEventDTO struct {
 	ID        string `json:"id"`
 	IssueID   string `json:"issue_id"`
@@ -362,16 +369,6 @@ func (h *Handler) events(w http.ResponseWriter, r *http.Request) {
 		writeAppError(w, err)
 		return
 	}
-	httpapi.JSON(w, http.StatusOK, map[string]any{"statuses": toStatusDTOs(list)})
-}
-
-func (h *Handler) removeStatus(w http.ResponseWriter, r *http.Request) {
-	list, err := h.svc.DeleteStatus(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "projectID"), chi.URLParam(r, "name"))
-	if err != nil {
-		writeAppError(w, err)
-		return
-	}
-	httpapi.JSON(w, http.StatusOK, map[string]any{"statuses": toStatusDTOs(list)})
 	dtos := make([]issueEventDTO, 0, len(list))
 	for _, e := range list {
 		dtos = append(dtos, issueEventDTO{
@@ -381,4 +378,13 @@ func (h *Handler) removeStatus(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	httpapi.JSON(w, http.StatusOK, map[string]any{"events": dtos})
+}
+
+func (h *Handler) removeStatus(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.DeleteStatus(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "projectID"), chi.URLParam(r, "name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	httpapi.JSON(w, http.StatusOK, map[string]any{"statuses": toStatusDTOs(list)})
 }

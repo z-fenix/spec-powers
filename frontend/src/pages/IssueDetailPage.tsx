@@ -976,11 +976,6 @@ export function IssueDetailPage() {
             )}
           </div>
 
-          <div>
-            <p className="section-title">变更记录</p>
-            <TimelinePanel projectId={id} issueId={issueId} />
-          </div>
-
           <LinkedPullRequestsPanel projectId={id} issueId={issueId} />
           <AttachmentPanel
             projectId={id}

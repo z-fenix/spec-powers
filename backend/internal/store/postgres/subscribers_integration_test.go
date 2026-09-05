@@ -34,7 +34,7 @@ func TestIssueSubscriberStoreRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
 	}
-	p, err := projects.CreateProject(ctx, ws.ID, "Subscribers", "desc", creator.ID)
+	p, err := projects.CreateProject(ctx, ws.ID, "Subscribers", "desc", creator.ID, "")
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}

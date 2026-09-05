@@ -31,6 +31,9 @@ type Service struct {
 	trigger     RunTrigger
 	subscribers store.SubscriberStore
 	notifier    notification.Sink
+	// statuses holds the workspace status directory; nil means the built-in
+	// default directory applies.
+	statuses store.WorkspaceStatusStore
 	// events records the issue timeline; nil disables event recording.
 	events store.IssueEventStore
 	// squads resolves squad assignees; nil disables squad assignment.
@@ -80,6 +83,7 @@ func (s *Service) WithNotifier(n notification.Sink) *Service {
 	s.notifier = n
 	return s
 }
+
 // WithEventStore installs the timeline event store; issue creation, field
 // updates and status transitions then append events.
 func (s *Service) WithEventStore(e store.IssueEventStore) *Service {
@@ -328,6 +332,8 @@ func (s *Service) CreateIssue(ctx context.Context, userID, projectID string, in 
 	if s.subscribers != nil {
 		if err := s.subscribers.AddIssueSubscriber(ctx, created.ID, userID); err != nil {
 			log.Printf("issue: subscribe creator failed: %v", err)
+		}
+	}
 	if err := s.recordEvent(ctx, created.ID, userID, "created", "", created.Title); err != nil {
 		return nil, err
 	}
@@ -640,6 +646,10 @@ func (s *Service) wakeParentIfChildrenTerminal(ctx context.Context, child *domai
 	siblings, err := s.issues.ListIssues(ctx, child.ProjectID, store.IssueFilter{ParentID: &child.ParentID})
 	if err != nil {
 		return httpapi.ErrInternal("list sibling issues failed")
+	}
+	dir, err := s.directoryFor(ctx, child.ProjectID)
+	if err != nil {
+		return err
 	}
 	for _, sib := range siblings {
 		if !IsTerminalIn(dir, sib.Status) {

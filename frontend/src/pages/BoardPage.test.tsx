@@ -162,13 +162,13 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocked.listIssues.mockResolvedValue([])
   vi.mocked(listStatuses).mockResolvedValue(DEFAULT_DIRECTORY)
+  vi.mocked(listPropertyDefinitions).mockResolvedValue([])
+  vi.mocked(listProjectIssueProperties).mockResolvedValue([])
 })
 
 function makeStatus(overrides: Partial<WorkspaceStatus>): WorkspaceStatus {
   return { name: 'custom', category: 'todo', position: 0, ...overrides }
-  vi.mocked(listPropertyDefinitions).mockResolvedValue([])
-  vi.mocked(listProjectIssueProperties).mockResolvedValue([])
-})
+}
 
 function makeDef(overrides: Partial<PropertyDefinition> = {}): PropertyDefinition {
   return {

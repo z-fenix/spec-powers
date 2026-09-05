@@ -18,10 +18,13 @@ import {
   type IssueComment,
   type MetadataEntry,
 } from '../api/issues'
+import { listAgents } from '../api/agents'
 import { ApiError } from '../api/client'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
 import { WorkflowProgress } from '../components/WorkflowProgress'
 import { ArtifactViewer } from '../components/ArtifactViewer'
+import { MentionText } from '../components/MentionText'
+import { MentionInput, type MentionCandidate } from '../components/MentionInput'
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError || err instanceof Error ? err.message : fallback
@@ -71,10 +74,12 @@ function CommentThread({
   comment,
   replies,
   onReply,
+  candidates,
 }: {
   comment: IssueComment
   replies: IssueComment[]
   onReply: (parentId: string, content: string) => Promise<void>
+  candidates: MentionCandidate[]
 }) {
   const [text, setText] = useState('')
 
@@ -87,21 +92,26 @@ function CommentThread({
     <div className="comment-thread" data-testid={`thread-${comment.id}`}>
       <div className="comment">
         <span className="comment-author">{comment.author_id}</span>
-        <span className="comment-content">{comment.content}</span>
+        <span className="comment-content">
+          <MentionText content={comment.content} />
+        </span>
       </div>
       <div className="comment-replies">
         {replies.map((r) => (
           <div key={r.id} className="comment reply" data-testid={`reply-${r.id}`}>
             <span className="comment-author">{r.author_id}</span>
-            <span className="comment-content">{r.content}</span>
+            <span className="comment-content">
+              <MentionText content={r.content} />
+            </span>
           </div>
         ))}
       </div>
-      <input
-        data-testid={`reply-input-${comment.id}`}
-        placeholder="回复…"
+      <MentionInput
+        testId={`reply-input-${comment.id}`}
+        placeholder="回复…（@ 可提及成员或 Agent）"
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={setText}
+        candidates={candidates}
       />
       <button data-testid={`reply-submit-${comment.id}`} onClick={submit}>
         回复
@@ -251,6 +261,7 @@ export function IssueDetailPage() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [newComment, setNewComment] = useState('')
+  const [agents, setAgents] = useState<MentionCandidate[]>([])
 
   const loadIssue = useCallback(
     () =>
@@ -292,6 +303,26 @@ export function IssueDetailPage() {
     loadAttachments()
     loadMetadata()
   }, [loadIssue, loadComments, loadAttachments, loadMetadata])
+
+  useEffect(() => {
+    let cancelled = false
+    listAgents()
+      .then((list) => {
+        if (!cancelled) {
+          setAgents(
+            list
+              .filter((a) => a.name)
+              .map((a) => ({ kind: 'agent' as const, id: a.id, name: a.name })),
+          )
+        }
+      })
+      .catch(() => {
+        // mention completion is best-effort; agents stay empty on failure
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const onTransition = (status: string) => {
     setError('')
@@ -339,6 +370,18 @@ export function IssueDetailPage() {
 
   const roots = comments.filter((c) => !c.parent_id)
   const repliesOf = (parentId: string) => comments.filter((c) => c.parent_id === parentId)
+
+  // Member candidates come from comment authors; the backend exposes no
+  // member-name API, so the author id doubles as the display name.
+  const memberCandidates: MentionCandidate[] = []
+  const seenAuthors = new Set<string>()
+  for (const c of comments) {
+    if (c.author_id && !seenAuthors.has(c.author_id)) {
+      seenAuthors.add(c.author_id)
+      memberCandidates.push({ kind: 'member', id: c.author_id, name: c.author_id })
+    }
+  }
+  const candidates = [...agents, ...memberCandidates]
 
   return (
     <section data-testid="issue-detail">
@@ -413,14 +456,16 @@ export function IssueDetailPage() {
           comment={c}
           replies={repliesOf(c.id)}
           onReply={onReply}
+          candidates={candidates}
         />
       ))}
       <form onSubmit={onSubmitComment} className="inline-form">
-        <input
-          data-testid="new-comment"
-          placeholder="写评论…"
+        <MentionInput
+          testId="new-comment"
+          placeholder="写评论…（@ 可提及成员或 Agent）"
           value={newComment}
-          onChange={(e) => setNewComment(e.target.value)}
+          onChange={setNewComment}
+          candidates={candidates}
         />
         <button type="submit" data-testid="submit-comment">
           评论

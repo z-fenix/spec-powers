@@ -12,6 +12,7 @@ import { MemberProfilePage } from './pages/MemberProfilePage'
 import { NotificationsPage } from './pages/NotificationsPage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { ProjectsPage } from './pages/ProjectsPage'
+import { SettingsPage } from './pages/SettingsPage'
 import { SquadsPage } from './pages/SquadsPage'
 
 export default function App() {
@@ -31,6 +32,7 @@ export default function App() {
             <Route path="/webhooks" element={<WebhooksPage />} />
             <Route path="/autopilots" element={<AutopilotsPage />} />
             <Route path="/members/:userId" element={<MemberProfilePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Route>
         </Route>
       </Routes>

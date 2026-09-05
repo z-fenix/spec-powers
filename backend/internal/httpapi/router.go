@@ -33,14 +33,15 @@ func ErrInternal(msg string) *AppError { return &AppError{Status: 500, Code: "in
 // Deps carries the handler bundles wired into the router. Nil bundles are
 // skipped so the skeleton stays testable before auth/project handlers land.
 type Deps struct {
-	Auth    http.Handler
-	Project http.Handler
-	Changes http.Handler
-	Skills  http.Handler
-	Agents  http.Handler
-	Runs    http.Handler
-	Notifs  http.Handler
-	Runtime http.Handler
+	Auth      http.Handler
+	Project   http.Handler
+	Changes   http.Handler
+	Skills    http.Handler
+	Agents    http.Handler
+	Runs      http.Handler
+	Notifs    http.Handler
+	Runtime   http.Handler
+	Workspace http.Handler
 	Squads  http.Handler
 	// Hooks is the unauthenticated inbound webhook endpoint (signature is
 	// the credential); Webhooks and Autopilots are the JWT management APIs.
@@ -84,6 +85,9 @@ func NewRouter(deps Deps) http.Handler {
 		}
 		if deps.Runtime != nil {
 			r.Mount("/runtime", http.StripPrefix("/api/v1/runtime", deps.Runtime))
+		}
+		if deps.Workspace != nil {
+			r.Mount("/workspace", http.StripPrefix("/api/v1/workspace", deps.Workspace))
 		}
 		if deps.Squads != nil {
 			r.Mount("/squads", http.StripPrefix("/api/v1/squads", deps.Squads))

@@ -29,6 +29,7 @@ import (
 	"specpowers/backend/internal/squad"
 	"specpowers/backend/internal/store/postgres"
 	"specpowers/backend/internal/workflow"
+	"specpowers/backend/internal/workspace"
 )
 
 // Options carries injectable dependencies for tests. Zero values keep the
@@ -102,11 +103,13 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	agents := postgres.NewAgentStore(pool)
 	runs := postgres.NewRunStore(pool)
 	runLogs := postgres.NewRunLogStore(pool)
+	invites := postgres.NewInviteStore(pool)
+	apiTokenStore := postgres.NewAPITokenStore(pool)
 	subscribers := postgres.NewIssueSubscriberStore(pool)
 	issueEvents := postgres.NewIssueEventStore(pool)
 	squads := postgres.NewSquadStore(pool)
 
-	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
+	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour).WithAPIStore(apiTokenStore)
 	notificationStore := postgres.NewNotificationStore(pool)
 	notificationSvc := notification.NewService(notificationStore)
 	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
@@ -182,6 +185,10 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	workflowHandler := workflow.NewHandler(workflowService, tokens)
 	skillHandler := skill.NewHandler(skillRegistry, tokens)
 	notificationHandler := notification.NewHandler(notificationSvc, tokens)
+	workspaceHandler := workspace.NewHandler(
+		workspace.NewService(members, invites, users, workspaces),
+		tokens,
+	)
 	squadHandler := squad.NewHandler(squad.NewService(squads, users), tokens)
 
 	// Agent runtime: definitions, run queue, LLM tool-loop executor and the
@@ -236,19 +243,20 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 
 	return &Server{
 		Handler: httpapi.NewRouter(httpapi.Deps{
-			Auth:    authHandler.Routes(),
-			Project: projectHandler.Routes(),
-			Changes: workflowHandler.Routes(),
-			Skills:  skillHandler.Routes(),
-			Agents:  agentHandler.AgentRoutes(),
-			Runs:    agentHandler.RunRoutes(),
-			Notifs:  notificationHandler.Routes(),
-			Runtime: runtimeHandler.Routes(),
+			Auth:      authHandler.Routes(),
+			Project:   projectHandler.Routes(),
+			Changes:   workflowHandler.Routes(),
+			Skills:    skillHandler.Routes(),
+			Agents:    agentHandler.AgentRoutes(),
+			Runs:      agentHandler.RunRoutes(),
+			Notifs:    notificationHandler.Routes(),
+			Runtime:   runtimeHandler.Routes(),
+			Workspace: workspaceHandler.Routes(),
 			Squads:  squadHandler.Routes(),
 			Hooks:      automationHandler.HookRoutes(),
 			Webhooks:   automationHandler.WebhookRoutes(),
 			Autopilots: automationHandler.AutopilotRoutes(),
-			Static:  staticFromConfig(cfg),
+			Static:    staticFromConfig(cfg),
 		}),
 		pool:       pool,
 		ownsPool:   ownsPool,

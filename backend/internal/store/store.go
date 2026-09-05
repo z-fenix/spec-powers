@@ -35,6 +35,20 @@ type MemberStore interface {
 	ListWorkspaceIDsForUser(ctx context.Context, userID string) ([]string, error)
 }
 
+// WorkspaceStatusStore is a workspace's status directory: the set of status
+// names issues may carry plus the category each maps to. A workspace with no
+// stored rows uses the built-in defaults (domain.DefaultStatusDirectory);
+// the first mutation materializes them.
+type WorkspaceStatusStore interface {
+	// ListStatuses returns the directory ordered by position; built-in
+	// defaults when the workspace has no stored rows.
+	ListStatuses(ctx context.Context, workspaceID string) ([]domain.WorkspaceStatus, error)
+	// UpsertStatus creates or updates one entry by (workspace, name).
+	UpsertStatus(ctx context.Context, s *domain.WorkspaceStatus) (*domain.WorkspaceStatus, error)
+	// DeleteStatus removes one entry; ErrNotFound when missing.
+	DeleteStatus(ctx context.Context, workspaceID, name string) error
+}
+
 type ProjectStore interface {
 	CreateProject(ctx context.Context, workspaceID, name, description, createdBy string) (*domain.Project, error)
 	GetProject(ctx context.Context, id string) (*domain.Project, error)
@@ -105,6 +119,13 @@ type IssueMetadataStore interface {
 	DeleteIssueMetadata(ctx context.Context, issueID, key string) error
 }
 
+// SubscriberStore is the per-issue subscriber list. Add is idempotent;
+// Remove reports ErrNotFound for a user that is not subscribed. List returns
+// the subscribers' user rows, oldest subscription first.
+type SubscriberStore interface {
+	AddIssueSubscriber(ctx context.Context, issueID, userID string) error
+	RemoveIssueSubscriber(ctx context.Context, issueID, userID string) error
+	ListIssueSubscribers(ctx context.Context, issueID string) ([]domain.User, error)
 // PropertyStore covers project-level custom property definitions and the
 // per-issue values assigned to them. SetIssueProperty is an upsert on
 // (issue_id, property_id); deleting a definition cascades to its values.
@@ -152,6 +173,15 @@ type RunStore interface {
 	// FinishRun sets a run's terminal status ("done" or "failed") with an
 	// optional error message and stamps finished_at.
 	FinishRun(ctx context.Context, id, status, errMsg string) (*domain.Run, error)
+	// RecordRunUsage appends one LLM completion's token usage to the run.
+	// Called once per completion so usage survives a run that later fails.
+	RecordRunUsage(ctx context.Context, runID string, promptTokens, completionTokens int64) error
+	// IssueUsage aggregates the token usage of every completion of one
+	// issue's runs.
+	IssueUsage(ctx context.Context, issueID string) (*domain.UsageTotals, error)
+	// ProjectUsage aggregates token usage per issue of one project, ordered
+	// by issue title. Issues without recorded usage are omitted.
+	ProjectUsage(ctx context.Context, projectID string) ([]domain.IssueUsage, error)
 }
 
 type RunLogStore interface {
@@ -211,4 +241,30 @@ type NotificationStore interface {
 	// MarkAllNotificationsRead stamps read_at on every unread notification
 	// of the user and returns how many rows changed.
 	MarkAllNotificationsRead(ctx context.Context, userID string, readAt time.Time) (int, error)
+}
+
+type WebhookStore interface {
+	CreateWebhook(ctx context.Context, w *domain.Webhook) (*domain.Webhook, error)
+	GetWebhook(ctx context.Context, id string) (*domain.Webhook, error)
+	ListWebhooks(ctx context.Context) ([]domain.Webhook, error)
+	// UpdateWebhook persists the webhook's mutable fields (name, secret,
+	// enabled) and returns the updated row.
+	UpdateWebhook(ctx context.Context, w *domain.Webhook) (*domain.Webhook, error)
+	DeleteWebhook(ctx context.Context, id string) error
+}
+
+type AutopilotStore interface {
+	CreateAutopilot(ctx context.Context, a *domain.Autopilot) (*domain.Autopilot, error)
+	GetAutopilot(ctx context.Context, id string) (*domain.Autopilot, error)
+	ListAutopilots(ctx context.Context) ([]domain.Autopilot, error)
+	// UpdateAutopilot persists the autopilot's mutable fields, including
+	// enabled, last_fired_at and next_run_at (scheduler bookkeeping).
+	UpdateAutopilot(ctx context.Context, a *domain.Autopilot) (*domain.Autopilot, error)
+	DeleteAutopilot(ctx context.Context, id string) error
+	// ListAutopilotsByWebhook returns the autopilots bound to one inbound
+	// webhook; enabledOnly restricts to enabled ones.
+	ListAutopilotsByWebhook(ctx context.Context, webhookID string, enabledOnly bool) ([]domain.Autopilot, error)
+	// DueCronAutopilots returns enabled cron autopilots whose next_run_at
+	// is due (NULL counts as due, so a fresh autopilot fires immediately).
+	DueCronAutopilots(ctx context.Context, now time.Time) ([]domain.Autopilot, error)
 }

@@ -15,6 +15,7 @@ import (
 
 	"specpowers/backend/internal/agent"
 	"specpowers/backend/internal/auth"
+	"specpowers/backend/internal/automation"
 	"specpowers/backend/internal/collab"
 	"specpowers/backend/internal/config"
 	"specpowers/backend/internal/domain"
@@ -100,17 +101,23 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	agents := postgres.NewAgentStore(pool)
 	runs := postgres.NewRunStore(pool)
 	runLogs := postgres.NewRunLogStore(pool)
+	subscribers := postgres.NewIssueSubscriberStore(pool)
 	issueEvents := postgres.NewIssueEventStore(pool)
 
 	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
 	notificationStore := postgres.NewNotificationStore(pool)
 	notificationSvc := notification.NewService(notificationStore)
 	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
-	issueService := issue.NewService(issues, projects, users).WithEventStore(issueEvents)
+	issueService := issue.NewService(issues, projects, users).
+		WithStatusStore(postgres.NewWorkspaceStatusStore(pool))
+		WithSubscribers(subscribers).
+		WithNotifier(notificationSvc).
+    WithEventStore(issueEvents)
 	// Mention auto-claim: comments mentioning an agent enqueue its run.
 	mentionTrigger := agent.NewMentionTrigger(agents, runs)
 	collabSvc := collab.NewService(issues, projects, comments, attachments, metadata, cfg.AttachmentDir).
 		WithNotifier(notificationSvc).
+		WithSubscribers(subscribers, users).
 		WithUserDirectory(users).
 		WithCommentObserver(func(ctx context.Context, c *domain.IssueComment) {
 			if err := mentionTrigger.OnComment(ctx, c.IssueID, c.AuthorID, c.Content); err != nil {
@@ -186,10 +193,13 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 		Skills:      skillRegistry,
 		WorkDir:     cfg.AgentWorkDir,
 		Logs:        runLogs,
+		Usage:       runs,
 		Flow:        agent.NewWorkflowFlow(workflowService),
 		MentionHook: mentionTrigger.OnComment,
 	})
-	queue := agent.NewQueue(runs, runLogs, agents, executor).WithNotifier(notificationSvc, issues)
+	queue := agent.NewQueue(runs, runLogs, agents, executor).
+		WithNotifier(notificationSvc, issues).
+		WithSubscribers(subscribers)
 	issueService = issueService.WithRunTrigger(runTrigger.WithNotifier(notificationSvc))
 	// Long-lived credentials for locally registered agent runtimes (sp agent
 	// register). Revocation is deleting the agent.
@@ -201,6 +211,14 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	// assignees when deadlines approach or pass; shares the worker lifetime.
 	dueScanner := notification.NewDueScanner(issues, agents, notificationStore, notificationSvc)
 	go dueScanner.Loop(workerCtx, time.Minute)
+	// Webhooks + autopilots: management service, cron scheduler and the
+	// unauthenticated inbound webhook endpoint (signature-authenticated).
+	webhooks := postgres.NewWebhookStore(pool)
+	autopilots := postgres.NewAutopilotStore(pool)
+	automationSvc := automation.NewService(webhooks, autopilots, issueService, runs)
+	automationHandler := automation.NewHandler(automationSvc, tokens)
+	autopilotScheduler := automation.NewScheduler(autopilots, automationSvc)
+	go autopilotScheduler.Loop(workerCtx, time.Minute)
 	runtimeHandler := agent.NewRuntimeHandler(agent.RuntimeHandlerDeps{
 		Agents:      agents,
 		Runs:        runs,
@@ -215,15 +233,18 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 
 	return &Server{
 		Handler: httpapi.NewRouter(httpapi.Deps{
-			Auth:    authHandler.Routes(),
-			Project: projectHandler.Routes(),
-			Changes: workflowHandler.Routes(),
-			Skills:  skillHandler.Routes(),
-			Agents:  agentHandler.AgentRoutes(),
-			Runs:    agentHandler.RunRoutes(),
-			Notifs:  notificationHandler.Routes(),
-			Runtime: runtimeHandler.Routes(),
-			Static:  staticFromConfig(cfg),
+			Auth:       authHandler.Routes(),
+			Project:    projectHandler.Routes(),
+			Changes:    workflowHandler.Routes(),
+			Skills:     skillHandler.Routes(),
+			Agents:     agentHandler.AgentRoutes(),
+			Runs:       agentHandler.RunRoutes(),
+			Notifs:     notificationHandler.Routes(),
+			Runtime:    runtimeHandler.Routes(),
+			Hooks:      automationHandler.HookRoutes(),
+			Webhooks:   automationHandler.WebhookRoutes(),
+			Autopilots: automationHandler.AutopilotRoutes(),
+			Static:     staticFromConfig(cfg),
 		}),
 		pool:       pool,
 		ownsPool:   ownsPool,

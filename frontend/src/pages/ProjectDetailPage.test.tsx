@@ -1,9 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { ProjectDetailPage } from './ProjectDetailPage'
 import { apiFetch, ApiError } from '../api/client'
+import * as runsApi from '../api/runs'
 import * as propertiesApi from '../api/properties'
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -11,6 +12,9 @@ vi.mock('../api/client', async (importOriginal) => {
   return { ...actual, apiFetch: vi.fn() }
 })
 
+vi.mock('../api/runs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/runs')>()
+  return { ...actual, getProjectUsage: vi.fn() }
 vi.mock('../api/properties', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/properties')>()
   return {
@@ -22,6 +26,7 @@ vi.mock('../api/properties', async (importOriginal) => {
 })
 
 const mockedFetch = vi.mocked(apiFetch)
+const mockedUsage = vi.mocked(runsApi.getProjectUsage)
 
 const project = {
   id: 'p1',
@@ -54,6 +59,7 @@ function mockInitialLoad() {
 beforeEach(() => {
   vi.clearAllMocks()
   mockedFetch.mockReset()
+  mockedUsage.mockResolvedValue([])
   vi.mocked(propertiesApi.listPropertyDefinitions).mockResolvedValue([])
 })
 
@@ -65,6 +71,29 @@ describe('ProjectDetailPage', () => {
     expect(await screen.findByText('Alpha')).toBeInTheDocument()
     expect(screen.getByText('octo/hello')).toBeInTheDocument()
     expect(screen.getByTestId('context-input')).toHaveValue('team notes')
+  })
+
+  it('shows per-issue LLM usage', async () => {
+    mockInitialLoad()
+    mockedUsage.mockResolvedValue([
+      { issue_id: 'i1', title: 'A task', calls: 2, prompt_tokens: 1234, completion_tokens: 567 },
+      { issue_id: 'i2', title: 'B task', calls: 1, prompt_tokens: 90, completion_tokens: 40 },
+    ])
+    renderPage()
+
+    const panel = await screen.findByTestId('project-usage')
+    expect(within(panel).getByTestId('usage-row-i1')).toHaveTextContent('A task')
+    expect(within(panel).getByTestId('usage-row-i1')).toHaveTextContent('1,234')
+    expect(within(panel).getByTestId('usage-row-i2')).toHaveTextContent('B task')
+    expect(runsApi.getProjectUsage).toHaveBeenCalledWith('p1')
+  })
+
+  it('shows the empty state when no usage was recorded', async () => {
+    mockInitialLoad()
+    renderPage()
+
+    const panel = await screen.findByTestId('project-usage')
+    expect(within(panel).getByText('还没有记录到 LLM 用量。')).toBeInTheDocument()
   })
 
   it('adds a resource and reloads the list', async () => {

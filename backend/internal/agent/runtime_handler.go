@@ -47,6 +47,7 @@ func (h *RuntimeHandler) Routes() http.Handler {
 	r.Post("/claim", h.claim)
 	r.Route("/runs/{runID}", func(r chi.Router) {
 		r.Post("/log", h.appendLog)
+		r.Post("/usage", h.reportUsage)
 		r.Post("/finish", h.finish)
 	})
 	// Issue-scoped endpoints authorize the calling agent by "has any run on
@@ -308,6 +309,34 @@ func (h *RuntimeHandler) appendLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpapi.JSON(w, http.StatusCreated, map[string]any{"seq": l.Seq})
+}
+
+// reportUsage records one LLM completion's token usage for a run the agent
+// owns. Local runtimes call it once per completion so per-issue usage
+// aggregation covers remotely executed runs too.
+func (h *RuntimeHandler) reportUsage(w http.ResponseWriter, r *http.Request) {
+	run, err := h.ownedRun(r.Context(), chi.URLParam(r, "runID"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	var req struct {
+		PromptTokens     int64 `json:"prompt_tokens"`
+		CompletionTokens int64 `json:"completion_tokens"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpapi.Error(w, httpapi.ErrInvalid("malformed JSON body"))
+		return
+	}
+	if req.PromptTokens < 0 || req.CompletionTokens < 0 {
+		httpapi.Error(w, httpapi.ErrInvalid("token counts must be non-negative"))
+		return
+	}
+	if err := h.deps.Runs.RecordRunUsage(r.Context(), run.ID, req.PromptTokens, req.CompletionTokens); err != nil {
+		httpapi.Error(w, httpapi.ErrInternal("record run usage failed"))
+		return
+	}
+	httpapi.JSON(w, http.StatusCreated, map[string]any{"recorded": true})
 }
 
 func (h *RuntimeHandler) finish(w http.ResponseWriter, r *http.Request) {

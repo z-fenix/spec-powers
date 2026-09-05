@@ -41,6 +41,9 @@ type Executor struct {
 	workDir  string
 	checkout func(ctx context.Context, pointer, destDir string) error
 	logs     logAppender
+	// usage records each LLM completion's token usage onto the run; nil
+	// skips recording (tests, usage-less clients).
+	usage usageRecorder
 	// mentionHook fires after the agent posts a comment so comments can
 	// hand work to other agents via @-mentions.
 	mentionHook func(ctx context.Context, issueID, authorID, content string) error
@@ -60,6 +63,8 @@ type ExecutorDeps struct {
 	WorkDir  string
 	Checkout func(ctx context.Context, pointer, destDir string) error
 	Logs     logAppender
+	// Usage records LLM token usage per completion (see usageRecorder).
+	Usage    usageRecorder
 	// MentionHook fires after the agent posts a comment (see mention.go).
 	MentionHook func(ctx context.Context, issueID, authorID, content string) error
 	// Flow drives the classic workflow (see flow.go).
@@ -82,6 +87,7 @@ func NewExecutor(deps ExecutorDeps) *Executor {
 		workDir:     deps.WorkDir,
 		checkout:    deps.Checkout,
 		logs:        deps.Logs,
+		usage:       deps.Usage,
 		mentionHook: deps.MentionHook,
 		flow:        deps.Flow,
 		MaxTurns:    maxTurns,
@@ -126,12 +132,14 @@ func (e *Executor) Execute(ctx context.Context, run *domain.Run, agent *domain.A
 	for turn := 1; turn <= e.MaxTurns; turn++ {
 		user := strings.Join(transcript, "\n\n")
 		e.appendLog(ctx, run.ID, logLLMRequest, "system:\n"+system+"\n\nuser:\n"+user)
-		reply, err := e.client.Complete(ctx, system, user)
+		completion, err := e.client.Complete(ctx, system, user)
 		if err != nil {
 			e.appendLog(ctx, run.ID, logError, err.Error())
 			return fmt.Errorf("llm turn %d: %w", turn, err)
 		}
-		e.appendLog(ctx, run.ID, logLLMResponse, reply)
+		e.recordUsage(ctx, run.ID, completion)
+		e.appendLog(ctx, run.ID, logLLMResponse, completion.Text)
+		reply := completion.Text
 
 		action, err := parseAction(reply)
 		if err != nil {
@@ -167,6 +175,23 @@ func (e *Executor) Execute(ctx context.Context, run *domain.Run, agent *domain.A
 
 type logAppender interface {
 	AppendRunLog(ctx context.Context, l *domain.RunLog) (*domain.RunLog, error)
+}
+
+// usageRecorder stores one LLM completion's token usage. Satisfied by
+// store.RunStore; kept narrow so tests can fake it.
+type usageRecorder interface {
+	RecordRunUsage(ctx context.Context, runID string, promptTokens, completionTokens int64) error
+}
+
+// recordUsage persists one completion's token usage; failures are logged and
+// non-fatal — usage bookkeeping must not fail an otherwise successful turn.
+func (e *Executor) recordUsage(ctx context.Context, runID string, c llm.Completion) {
+	if e.usage == nil || (c.PromptTokens == 0 && c.CompletionTokens == 0) {
+		return
+	}
+	if err := e.usage.RecordRunUsage(ctx, runID, c.PromptTokens, c.CompletionTokens); err != nil {
+		e.appendLog(ctx, runID, logError, "record usage: "+err.Error())
+	}
 }
 
 func (e *Executor) appendLog(ctx context.Context, runID, kind, content string) {

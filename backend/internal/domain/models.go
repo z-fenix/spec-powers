@@ -165,6 +165,15 @@ type IssueMetadata struct {
 	UpdatedAt time.Time
 }
 
+// IssueSubscriber is a user watching an issue. Subscribers are notified on
+// comments, status changes and run completions; an issue's creator is
+// subscribed automatically.
+type IssueSubscriber struct {
+	IssueID   string
+	UserID    string
+	CreatedAt time.Time
+}
+
 // Change is a workflow instance: the classic split flow (proposal → specs →
 // design → tasks) running for one parent issue. Phase is the flow's current
 // step; Status is "active" until the change is archived.
@@ -222,8 +231,8 @@ type Agent struct {
 }
 
 // Run is one execution of an agent on an issue. Trigger is what started it:
-// "assigned", "status_changed", "wakeup" or "manual". Status follows the
-// lifecycle queued → running → done | failed.
+// "assigned", "status_changed", "wakeup", "manual", "mention" or
+// "autopilot". Status follows the lifecycle queued → running → done | failed.
 type Run struct {
 	ID         string
 	AgentID    string
@@ -234,6 +243,32 @@ type Run struct {
 	CreatedAt  time.Time
 	StartedAt  *time.Time
 	FinishedAt *time.Time
+}
+
+// RunUsage records one LLM completion's token consumption for a run: one row
+// per completion, recorded as the executor consumes it so usage survives a
+// run that later fails.
+type RunUsage struct {
+	RunID            string
+	PromptTokens     int64
+	CompletionTokens int64
+	CreatedAt        time.Time
+}
+
+// UsageTotals aggregates LLM token consumption across completions. Calls is
+// the number of recorded completions.
+type UsageTotals struct {
+	Calls            int
+	PromptTokens     int64
+	CompletionTokens int64
+}
+
+// IssueUsage is one issue's aggregated token usage; Title is the issue's
+// title so project-level listings can be rendered without extra lookups.
+type IssueUsage struct {
+	IssueID string
+	Title   string
+	UsageTotals
 }
 
 // RunLog is one entry of a run's execution log. Kind is "llm_request",
@@ -260,6 +295,60 @@ type TaskMapping struct {
 	CreatedAt  time.Time
 }
 
+// Status categories are the fixed behavior classes a workspace status can
+// belong to; the state machine operates on categories, not raw status names.
+const (
+	CatBacklog    = "backlog"
+	CatTodo       = "todo"
+	CatInProgress = "in_progress"
+	CatInReview   = "in_review"
+	CatBlocked    = "blocked"
+	CatDone       = "done"
+	CatCancelled  = "cancelled"
+)
+
+func IsValidStatusCategory(c string) bool {
+	switch c {
+	case CatBacklog, CatTodo, CatInProgress, CatInReview, CatBlocked, CatDone, CatCancelled:
+		return true
+	}
+	return false
+}
+
+// WorkspaceStatus is one entry of a workspace's status directory: a status
+// name issues can carry plus the category that drives its state-machine
+// behavior. Position orders kanban columns.
+type WorkspaceStatus struct {
+	WorkspaceID string
+	Name        string
+	Category    string
+	Position    int
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// DefaultStatusDirectory returns the built-in directory used by any
+// workspace that has not customized its statuses.
+func DefaultStatusDirectory() []WorkspaceStatus {
+	entries := []struct {
+		name string
+		cat  string
+	}{
+		{"backlog", CatBacklog},
+		{"todo", CatTodo},
+		{"in_progress", CatInProgress},
+		{"in_review", CatInReview},
+		{"blocked", CatBlocked},
+		{"done", CatDone},
+		{"cancelled", CatCancelled},
+	}
+	out := make([]WorkspaceStatus, 0, len(entries))
+	for i, e := range entries {
+		out = append(out, WorkspaceStatus{Name: e.name, Category: e.cat, Position: i})
+	}
+	return out
+}
+
 // Notification is one in-app notification for a user. Kind describes the
 // event source ("comment", "run_finished", "phase_advanced"); IssueID and
 // ProjectID link the notification to the issue it is about so UIs can deep
@@ -274,4 +363,41 @@ type Notification struct {
 	ProjectID string
 	ReadAt    *time.Time
 	CreatedAt time.Time
+}
+
+// Webhook is an inbound webhook endpoint: external systems POST events to
+// /api/v1/hooks/{id} and authenticate with an HMAC-SHA256 signature of the
+// body computed over Secret. Enabled webhooks fire the autopilots bound to
+// them (trigger "webhook").
+type Webhook struct {
+	ID        string
+	Name      string
+	Secret    string
+	Enabled   bool
+	CreatedAt time.Time
+}
+
+// Autopilot automates an action. TriggerType is "cron" (CronSpec is a
+// five-field cron expression), "webhook" (fires when WebhookID's endpoint
+// receives a valid event) or "manual". ActionType is "create_issue" (creates
+// an issue in ProjectID with IssueTitle/IssueDescription) or "run_agent"
+// (enqueues a run of AgentID on IssueID). NextRunAt tracks the next cron
+// fire time and is maintained by the scheduler.
+type Autopilot struct {
+	ID               string
+	Name             string
+	TriggerType      string
+	CronSpec         string
+	WebhookID        string
+	ActionType       string
+	AgentID          string
+	ProjectID        string
+	IssueID          string
+	IssueTitle       string
+	IssueDescription string
+	CreatedBy        string
+	Enabled          bool
+	LastFiredAt      *time.Time
+	NextRunAt        *time.Time
+	CreatedAt        time.Time
 }

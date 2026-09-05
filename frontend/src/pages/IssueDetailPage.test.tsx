@@ -5,8 +5,17 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { IssueDetailPage } from './IssueDetailPage'
 import * as api from '../api/issues'
 import * as workflowApi from '../api/workflow'
+import * as runsApi from '../api/runs'
 import type { Issue } from '../api/issues'
 import { ApiError } from '../api/client'
+
+vi.mock('../api/runs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/runs')>()
+  return {
+    ...actual,
+    getIssueUsage: vi.fn(),
+  }
+})
 
 vi.mock('../api/workflow', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/workflow')>()
@@ -33,6 +42,9 @@ vi.mock('../api/issues', async (importOriginal) => {
     listMetadata: vi.fn(),
     setMetadata: vi.fn(),
     deleteMetadata: vi.fn(),
+    listSubscribers: vi.fn(),
+    addSubscriber: vi.fn(),
+    removeSubscriber: vi.fn(),
   }
 })
 
@@ -89,11 +101,17 @@ beforeEach(() => {
   vi.mocked(workflowApi.getChangeByIssue).mockRejectedValue(
     new ApiError(404, 'not_found', 'no change'),
   )
+  vi.mocked(runsApi.getIssueUsage).mockResolvedValue({
+    calls: 0,
+    prompt_tokens: 0,
+    completion_tokens: 0,
+  })
   mocked.getIssue.mockResolvedValue(issue)
   mocked.listChildren.mockResolvedValue([])
   mocked.listComments.mockResolvedValue([])
   mocked.listAttachments.mockResolvedValue([])
   mocked.listMetadata.mockResolvedValue([])
+  mocked.listSubscribers.mockResolvedValue([])
   vi.mocked(propertiesApi.listPropertyDefinitions).mockResolvedValue([])
   vi.mocked(propertiesApi.listIssueProperties).mockResolvedValue([])
   mocked.listIssueEvents.mockResolvedValue([])
@@ -109,6 +127,26 @@ describe('IssueDetailPage', () => {
     expect(screen.getByText('2026-09-10')).toBeInTheDocument()
   })
 
+  it('shows the aggregated LLM usage', async () => {
+    vi.mocked(runsApi.getIssueUsage).mockResolvedValue({
+      calls: 2,
+      prompt_tokens: 1234,
+      completion_tokens: 567,
+    })
+    renderPage()
+
+    const panel = await screen.findByTestId('issue-usage')
+    expect(within(panel).getByTestId('usage-calls')).toHaveTextContent('2')
+    expect(within(panel).getByTestId('usage-prompt')).toHaveTextContent('1,234')
+    expect(within(panel).getByTestId('usage-completion')).toHaveTextContent('567')
+    expect(runsApi.getIssueUsage).toHaveBeenCalledWith('i1')
+  })
+
+  it('renders zero usage without recorded runs', async () => {
+    renderPage()
+
+    const panel = await screen.findByTestId('issue-usage')
+    expect(within(panel).getByTestId('usage-calls')).toHaveTextContent('0')
   it('renders the change timeline', async () => {
     mocked.listIssueEvents.mockResolvedValue([
       {
@@ -347,6 +385,39 @@ describe('IssueDetailPage', () => {
 
     await userEvent.click(screen.getByTestId('meta-delete-k'))
     expect(mocked.deleteMetadata).toHaveBeenCalledWith('p1', 'i1', 'k')
+  })
+
+  it('lists subscribers and can add and remove one', async () => {
+    const bob = { user_id: 'u2', display_name: 'Bob', email: 'bob@example.com' }
+    const carol = { user_id: 'u3', display_name: 'Carol', email: 'carol@example.com' }
+    mocked.listSubscribers.mockResolvedValueOnce([bob])
+    mocked.addSubscriber.mockResolvedValue([bob, carol])
+    mocked.removeSubscriber.mockResolvedValue(undefined)
+    mocked.listSubscribers.mockResolvedValueOnce([bob, carol])
+    renderPage()
+
+    const panel = await screen.findByTestId('subscribers')
+    expect(within(panel).getByTestId('subscriber-u2')).toBeInTheDocument()
+
+    await userEvent.type(within(panel).getByTestId('subscriber-email'), 'carol@example.com')
+    await userEvent.click(within(panel).getByTestId('subscriber-add'))
+
+    expect(mocked.addSubscriber).toHaveBeenCalledWith('p1', 'i1', 'carol@example.com')
+    expect(await within(panel).findByTestId('subscriber-u3')).toBeInTheDocument()
+
+    await userEvent.click(within(panel).getByTestId('subscriber-remove-u2'))
+    expect(mocked.removeSubscriber).toHaveBeenCalledWith('p1', 'i1', 'u2')
+  })
+
+  it('shows an error when adding a subscriber fails', async () => {
+    mocked.addSubscriber.mockRejectedValue(new Error('user not found'))
+    renderPage()
+
+    const panel = await screen.findByTestId('subscribers')
+    await userEvent.type(within(panel).getByTestId('subscriber-email'), 'ghost@example.com')
+    await userEvent.click(within(panel).getByTestId('subscriber-add'))
+
+    expect(await within(panel).findByRole('alert')).toHaveTextContent('user not found')
   })
 
   it('shows the error message when loading fails', async () => {

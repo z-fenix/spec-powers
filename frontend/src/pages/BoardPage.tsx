@@ -330,6 +330,19 @@ export function BoardPage() {
             value={stageFilter}
             onChange={(e) => onFilter(statusFilter, e.target.value)}
           />
+          <form onSubmit={onSearch} data-testid="board-search">
+            <input
+              className="input"
+              aria-label="搜索"
+              data-testid="search-issues"
+              placeholder="搜索 issue…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
+            <button type="submit" className="btn btn-outline btn-sm" data-testid="search-submit">
+              搜索
+            </button>
+          </form>
           <div className="toolbar-group" style={{ marginLeft: 'auto' }}>
             <button
               className={view === 'board' ? 'btn btn-outline btn-sm' : 'btn btn-ghost btn-sm'}

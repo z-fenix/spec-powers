@@ -1,4 +1,3 @@
-import { Link, Outlet, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
@@ -14,6 +13,29 @@ function IconFolder() {
         strokeWidth="1.3"
         strokeLinejoin="round"
       />
+    </svg>
+  )
+}
+
+function IconWebhook() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d="M5.5 3.5a2 2 0 1 0-1.7 3.1l2 3.4m4.9-6.5a2 2 0 1 1 1.5 3.4L10.5 10M4.5 10.5a2 2 0 1 0 3 1.7h4"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function IconAutopilot() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M8 4.5V8l2.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
     </svg>
   )
 }
@@ -92,6 +114,15 @@ export function Layout() {
               项目
             </NavLink>
             <NotificationBell />
+            <p className="nav-group-label">自动化</p>
+            <NavLink to="/webhooks" className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
+              <IconWebhook />
+              Webhooks
+            </NavLink>
+            <NavLink to="/autopilots" className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
+              <IconAutopilot />
+              Autopilots
+            </NavLink>
           </nav>
           <div className="sidebar-footer">
             <button

@@ -26,7 +26,6 @@ import { STATUSES, STATUS_LABELS } from '../lib/status'
 import { StatusIcon } from '../components/StatusIcon'
 import { WorkflowProgress } from '../components/WorkflowProgress'
 import { ArtifactViewer } from '../components/ArtifactViewer'
-import { MentionText } from '../components/MentionText'
 import { MentionInput, type MentionCandidate } from '../components/MentionInput'
 import { renderMarkdown } from '../lib/markdown'
 
@@ -509,6 +508,11 @@ export function IssueDetailPage() {
             </div>
 
             <div className="detail-section">
+              <h3>时间线</h3>
+              <TimelinePanel projectId={id} issueId={issueId} />
+            </div>
+
+            <div className="detail-section">
               <h3>评论</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {roots.map((c) => (
@@ -517,6 +521,7 @@ export function IssueDetailPage() {
                     comment={c}
                     replies={repliesOf(c.id)}
                     onReply={onReply}
+                    candidates={candidates}
                   />
                 ))}
               </div>

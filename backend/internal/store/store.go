@@ -183,7 +183,9 @@ type TaskMappingStore interface {
 type NotificationStore interface {
 	CreateNotification(ctx context.Context, n *domain.Notification) (*domain.Notification, error)
 	// ListNotifications returns the user's notifications, newest first.
-	ListNotifications(ctx context.Context, userID string, unreadOnly bool) ([]domain.Notification, error)
+	// A non-empty kind narrows the list to that event source; empty means
+	// every kind.
+	ListNotifications(ctx context.Context, userID string, unreadOnly bool, kind string) ([]domain.Notification, error)
 	// CountUnreadNotifications returns how many of the user's notifications
 	// are still unread.
 	CountUnreadNotifications(ctx context.Context, userID string) (int, error)

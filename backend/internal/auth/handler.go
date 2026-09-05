@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -82,7 +83,7 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeAppError(w http.ResponseWriter, err error) {
-	if appErr, ok := err.(*httpapi.AppError); ok {
+	if appErr, ok := errors.AsType[*httpapi.AppError](err); ok {
 		httpapi.Error(w, appErr)
 		return
 	}

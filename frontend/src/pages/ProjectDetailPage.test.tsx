@@ -62,9 +62,10 @@ describe('ProjectDetailPage', () => {
       .mockResolvedValueOnce({ resources: [resource] })
     renderPage()
 
+    await userEvent.click(await screen.findByTestId('add-resource'))
     await userEvent.type(await screen.findByTestId('resource-label'), 'lib')
     await userEvent.type(screen.getByTestId('resource-pointer'), 'octo/lib')
-    await userEvent.click(screen.getByTestId('add-resource'))
+    await userEvent.click(screen.getByTestId('confirm-add-resource'))
 
     expect(mockedFetch).toHaveBeenCalledWith(
       '/projects/p1/resources',
@@ -137,9 +138,10 @@ describe('ProjectDetailPage', () => {
     mockedFetch.mockRejectedValueOnce(new ApiError(400, 'invalid_request', 'invalid github_repo pointer'))
     renderPage()
 
+    await userEvent.click(await screen.findByTestId('add-resource'))
     await userEvent.type(await screen.findByTestId('resource-label'), 'bad')
     await userEvent.type(screen.getByTestId('resource-pointer'), 'nope')
-    await userEvent.click(screen.getByTestId('add-resource'))
+    await userEvent.click(screen.getByTestId('confirm-add-resource'))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('invalid github_repo pointer')
   })

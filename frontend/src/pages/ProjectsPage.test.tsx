@@ -59,10 +59,11 @@ describe('ProjectsPage', () => {
       .mockResolvedValueOnce({ projects: [created] })
     renderPage()
 
+    await userEvent.click(await screen.findByTestId('create-project'))
     await screen.findByTestId('project-name')
     await userEvent.type(screen.getByTestId('project-name'), 'Gamma')
     await userEvent.type(screen.getByTestId('project-description'), 'new one')
-    await userEvent.click(screen.getByTestId('create-project'))
+    await userEvent.click(screen.getByTestId('confirm-create-project'))
 
     expect(mockedFetch).toHaveBeenCalledWith(
       '/projects',

@@ -39,6 +39,31 @@ func transitionTo(ctx context.Context, svc *Service, userID, issueID string, sta
 	return nil
 }
 
+func TestCreateIssueTriggersAssignment(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, _ := newService()
+	trig := &fakeTrigger{}
+	svc.WithRunTrigger(trig)
+
+	if _, err := svc.CreateIssue(ctx, "alice", "p1", CreateInput{Title: "a"}); err != nil {
+		t.Fatalf("create unassigned: %v", err)
+	}
+	if len(trig.assigned) != 0 {
+		t.Fatalf("unassigned create should not trigger, got %d", len(trig.assigned))
+	}
+
+	created, err := svc.CreateIssue(ctx, "alice", "p1", CreateInput{Title: "b", AssigneeID: "carol"})
+	if err != nil {
+		t.Fatalf("create assigned: %v", err)
+	}
+	if len(trig.assigned) != 1 {
+		t.Fatalf("assignment trigger count = %d, want 1", len(trig.assigned))
+	}
+	if trig.assigned[0].ID != created.ID || trig.assigned[0].AssigneeID != "carol" {
+		t.Fatalf("triggered issue = %+v", trig.assigned[0])
+	}
+}
+
 func TestUpdateIssueTriggersAssignment(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, _ := newService()

@@ -30,10 +30,19 @@ export function NotificationBell() {
   return (
     <button
       data-testid="notification-bell"
-      className="notification-bell"
+      className="notification-bell nav-item"
       aria-label="通知中心"
       onClick={() => navigate('/notifications')}
     >
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <path
+          d="M8 1.75a4 4 0 0 0-4 4c0 3-1.25 4.5-1.25 4.5h10.5S12 8.75 12 5.75a4 4 0 0 0-4-4ZM6.5 13a1.5 1.5 0 0 0 3 0"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
       通知
       {unread > 0 && <span data-testid="notification-count">{unread}</span>}
     </button>

@@ -12,6 +12,7 @@ import { getRun, type RunLog } from '../api/runs'
 import { ApiError } from '../api/client'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
 import { StatusIcon } from '../components/StatusIcon'
+import { Modal } from '../components/Modal'
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError || err instanceof Error ? err.message : fallback
@@ -283,7 +284,7 @@ export function BoardPage() {
     <div className="page" data-testid="board">
       <div className="page-header">
         <h1 className="page-title">Issue 看板</h1>
-        {error && (
+        {error && !showCreate && (
           <p role="alert" data-testid="board-error" style={{ margin: 0, color: 'var(--destructive)', fontSize: 'var(--text-caption)' }}>
             {error}
           </p>
@@ -330,7 +331,7 @@ export function BoardPage() {
             >
               列表
             </button>
-            <button className="btn btn-primary btn-sm" data-testid="toggle-create" onClick={() => setShowCreate((v) => !v)}>
+            <button className="btn btn-primary btn-sm" data-testid="toggle-create" onClick={() => { setError(''); setShowCreate(true) }}>
               新建 Issue
             </button>
           </div>
@@ -343,7 +344,18 @@ export function BoardPage() {
         ) : view === 'board' ? (
           <div className="board">
             {STATUSES.map((s) => (
-              <div key={s} className="board-col" data-status={s} data-testid={`column-${s}`}>
+              <div
+                key={s}
+                className="board-col"
+                data-status={s}
+                data-testid={`column-${s}`}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  const dragId = e.dataTransfer.getData('text/plain') || dragIssueId
+                  if (dragId) onDropInColumn(dragId, s, null)
+                }}
+              >
                 <div className="board-col-header">
                   <StatusIcon status={s} />
                   {STATUS_LABELS[s]}
@@ -351,7 +363,14 @@ export function BoardPage() {
                 </div>
                 <div className="board-col-cards">
                   {byStatus(visible, s).map((i) => (
-                    <IssueCard key={i.id} issue={i} projectId={id} onTransition={onTransition} />
+                    <IssueCard
+                      key={i.id}
+                      issue={i}
+                      projectId={id}
+                      onTransition={onTransition}
+                      onDragStart={setDragIssueId}
+                      onDropOnCard={onDropOnCard}
+                    />
                   ))}
                 </div>
               </div>
@@ -365,96 +384,75 @@ export function BoardPage() {
                 <div key={stageNum} className="stage-group" data-testid={`stage-group-${stageNum}`}>
                   <h3 className="stage-group-title">Stage {stageNum}</h3>
                   {byStage(stageNum).map((i) => (
-                    <IssueCard key={i.id} issue={i} projectId={id} onTransition={onTransition} />
+                    <IssueCard
+                      key={i.id}
+                      issue={i}
+                      projectId={id}
+                      onTransition={onTransition}
+                      onDragStart={setDragIssueId}
+                      onDropOnCard={onDropOnCard}
+                    />
                   ))}
                 </div>
               ))}
           </div>
         )}
       </div>
-      {showCreate && (
-        <form onSubmit={onCreate} className="inline-form" data-testid="create-form">
-          <input
-            data-testid="create-title"
-            placeholder="标题"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-          />
-          <input
-            data-testid="create-description"
-            placeholder="描述"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-          <input
-            data-testid="create-stage"
-            type="number"
-            min={0}
-            placeholder="Stage"
-            value={stage}
-            onChange={(e) => setStage(e.target.value)}
-          />
-          <button type="submit" data-testid="submit-create">
-            创建
-          </button>
-        </form>
-      )}
 
-      {issues === null ? (
-        <p>加载中…</p>
-      ) : view === 'board' ? (
-        <div className="board-columns">
-          {STATUSES.map((s) => (
-            <div
-              key={s}
-              className="board-column"
-              data-testid={`column-${s}`}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault()
-                const dragId = e.dataTransfer.getData('text/plain') || dragIssueId
-                if (dragId) onDropInColumn(dragId, s, null)
-              }}
-            >
-              <h3>
-                {STATUS_LABELS[s]} <span className="count">{byStatus(visible, s).length}</span>
-              </h3>
-              {byStatus(visible, s).map((i) => (
-                <IssueCard
-                  key={i.id}
-                  issue={i}
-                  projectId={id}
-                  onTransition={onTransition}
-                  onDragStart={setDragIssueId}
-                  onDropOnCard={onDropOnCard}
-                />
-              ))}
+      {showCreate && (
+        <Modal title="新建 Issue" description="在看板上创建一个新的 Issue。" onClose={() => setShowCreate(false)}>
+          <form onSubmit={onCreate} data-testid="create-form">
+            <label>
+              标题
+              <input
+                className="input"
+                data-testid="create-title"
+                placeholder="标题"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+                autoFocus
+              />
+            </label>
+            <label>
+              描述
+              <input
+                className="input"
+                data-testid="create-description"
+                placeholder="描述"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </label>
+            <label>
+              Stage
+              <input
+                className="input"
+                data-testid="create-stage"
+                type="number"
+                min={0}
+                placeholder="Stage"
+                value={stage}
+                onChange={(e) => setStage(e.target.value)}
+              />
+            </label>
+            {error && (
+              <p role="alert" style={{ margin: 0, color: 'var(--destructive)', fontSize: 'var(--text-body)' }}>
+                {error}
+              </p>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="btn btn-outline" onClick={() => setShowCreate(false)}>
+                取消
+              </button>
+              <button type="submit" className="btn btn-primary" data-testid="submit-create">
+                创建
+              </button>
             </div>
-          ))}
-        </div>
-      ) : (
-        <div className="stage-groups">
-          {Array.from(new Set(visible.map((i) => i.stage)))
-            .sort((a, b) => a - b)
-            .map((stageNum) => (
-              <div key={stageNum} data-testid={`stage-group-${stageNum}`}>
-                <h3>Stage {stageNum}</h3>
-                {byStage(stageNum).map((i) => (
-                  <IssueCard
-                    key={i.id}
-                    issue={i}
-                    projectId={id}
-                    onTransition={onTransition}
-                    onDragStart={setDragIssueId}
-                    onDropOnCard={onDropOnCard}
-                  />
-                ))}
-              </div>
-            ))}
-        </div>
+          </form>
+        </Modal>
       )}
-    </section>
+    </div>
   )
 }
 

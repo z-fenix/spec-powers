@@ -39,6 +39,8 @@ type projectAccess interface {
 // userLookup resolves subscriber candidates from an email address.
 type userLookup interface {
 	GetUserByEmail(ctx context.Context, email string) (*domain.User, error)
+}
+
 // userNameDirectory resolves @-mentions to human users. Satisfied by the
 // postgres UserStore.
 type userNameDirectory interface {
@@ -91,6 +93,8 @@ func (s *Service) WithNotifier(n notification.Sink) *Service {
 func (s *Service) WithSubscribers(subs store.SubscriberStore, users userLookup) *Service {
 	s.subscribers = subs
 	s.users = users
+}
+
 // WithUserDirectory attaches the user directory used to resolve @-mentions
 // of human users in comment content.
 func (s *Service) WithUserDirectory(u userNameDirectory) *Service {

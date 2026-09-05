@@ -179,6 +179,8 @@ type SubscriberStore interface {
 	AddIssueSubscriber(ctx context.Context, issueID, userID string) error
 	RemoveIssueSubscriber(ctx context.Context, issueID, userID string) error
 	ListIssueSubscribers(ctx context.Context, issueID string) ([]domain.User, error)
+}
+
 // PropertyStore covers project-level custom property definitions and the
 // per-issue values assigned to them. SetIssueProperty is an upsert on
 // (issue_id, property_id); deleting a definition cascades to its values.

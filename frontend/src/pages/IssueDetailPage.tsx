@@ -973,7 +973,6 @@ export function IssueDetailPage() {
         entries={metadata}
         onChanged={loadMetadata}
       />
-    </section>
     </div>
   )
 }

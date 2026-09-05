@@ -79,7 +79,7 @@ func (s *Service) WithSubscribers(sub store.SubscriberStore) *Service {
 func (s *Service) WithNotifier(n notification.Sink) *Service {
 	s.notifier = n
 	return s
-	}
+}
 // WithEventStore installs the timeline event store; issue creation, field
 // updates and status transitions then append events.
 func (s *Service) WithEventStore(e store.IssueEventStore) *Service {

@@ -73,7 +73,7 @@ export function WebhooksPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Webhooks</h2>
+        <h1 className="page-title">Webhooks</h1>
         <button type="button" className="btn btn-primary" data-testid="webhook-create" onClick={() => setShowCreate(true)}>
           新建 Webhook
         </button>

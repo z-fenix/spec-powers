@@ -175,8 +175,11 @@ export function AgentsPage() {
   if (agents === null && !error) return <p>加载中…</p>
 
   return (
-    <section data-testid="agents-page">
-      <h2>Agents</h2>
+    <div className="page" data-testid="agents-page">
+      <div className="page-header">
+        <h1 className="page-title">Agents</h1>
+      </div>
+      <div className="page-body">
       {error && (
         <p role="alert" data-testid="agents-error">
           {error}
@@ -256,6 +259,7 @@ export function AgentsPage() {
           </li>
         ))}
       </ul>
-    </section>
+    </div>
+    </div>
   )
 }

@@ -100,8 +100,11 @@ export function SettingsPage() {
   if (!loaded) return <p>加载中…</p>
 
   return (
-    <section data-testid="settings-page">
-      <h2>工作区设置</h2>
+    <div className="page" data-testid="settings-page">
+      <div className="page-header">
+        <h1 className="page-title">工作区设置</h1>
+      </div>
+      <div className="page-body">
 
       <h3>
         成员{workspaceName ? ' · ' : ''}
@@ -224,6 +227,7 @@ export function SettingsPage() {
           ))}
         </ul>
       )}
-    </section>
+    </div>
+    </div>
   )
 }

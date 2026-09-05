@@ -129,7 +129,7 @@ export function AutopilotsPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Autopilots</h2>
+        <h1 className="page-title">Autopilots</h1>
         <button type="button" className="btn btn-primary" data-testid="autopilot-create" onClick={() => setShowCreate(true)}>
           新建 Autopilot
         </button>

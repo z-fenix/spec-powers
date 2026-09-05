@@ -1,6 +1,9 @@
 package issue
 
-import "specpowers/backend/internal/httpapi"
+import (
+	"specpowers/backend/internal/domain"
+	"specpowers/backend/internal/httpapi"
+)
 
 // Issue status values. done and cancelled are terminal.
 const (
@@ -72,4 +75,46 @@ func IsValidPriority(p string) bool {
 		return true
 	}
 	return false
+}
+
+// statusCategory resolves a status name against a workspace directory;
+// fallback false when the directory does not carry the name.
+func statusCategory(dir []domain.WorkspaceStatus, name string) (string, bool) {
+	for _, s := range dir {
+		if s.Name == name {
+			return s.Category, true
+		}
+	}
+	return "", false
+}
+
+// IsTerminalCategory reports whether a category is a terminal one (done,
+// cancelled).
+func IsTerminalCategory(cat string) bool {
+	return cat == domain.CatDone || cat == domain.CatCancelled
+}
+
+// IsTerminalIn reports terminal state per the workspace directory.
+func IsTerminalIn(dir []domain.WorkspaceStatus, name string) bool {
+	cat, ok := statusCategory(dir, name)
+	return ok && IsTerminalCategory(cat)
+}
+
+// TransitionIn validates a status change against a workspace's directory:
+// both statuses must exist in it, and the move must follow the category
+// state machine. With the built-in default directory (name == category) it
+// behaves exactly like Transition.
+func TransitionIn(dir []domain.WorkspaceStatus, from, to string) (string, error) {
+	fromCat, ok := statusCategory(dir, from)
+	if !ok {
+		return "", httpapi.ErrInvalid("unknown status: " + from)
+	}
+	toCat, ok := statusCategory(dir, to)
+	if !ok {
+		return "", httpapi.ErrInvalid("unknown status: " + to)
+	}
+	if !transitions[fromCat][toCat] {
+		return "", httpapi.ErrInvalid("illegal status transition: " + from + " -> " + to)
+	}
+	return to, nil
 }

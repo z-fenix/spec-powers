@@ -108,6 +108,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	notificationSvc := notification.NewService(notificationStore)
 	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
 	issueService := issue.NewService(issues, projects, users).
+		WithStatusStore(postgres.NewWorkspaceStatusStore(pool))
 		WithSubscribers(subscribers).
 		WithNotifier(notificationSvc).
     WithEventStore(issueEvents)

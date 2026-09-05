@@ -38,6 +38,14 @@ func NewService(issues store.IssueStore, projects store.ProjectStore, users stor
 	return &Service{issues: issues, projects: projects, users: users}
 }
 
+// WithStatusStore installs the workspace status directory store; without it
+// the built-in default directory applies. It returns the service for
+// chaining.
+func (s *Service) WithStatusStore(st store.WorkspaceStatusStore) *Service {
+	s.statuses = st
+	return s
+}
+
 // WithRunTrigger installs the run trigger; it returns the service for
 // chaining.
 func (s *Service) WithRunTrigger(t RunTrigger) *Service {
@@ -149,6 +157,41 @@ func validatePriority(p string) error {
 	return nil
 }
 
+// directoryFor resolves the status directory governing a project: the
+// project's workspace directory when a status store is installed, the
+// built-in defaults otherwise.
+func (s *Service) directoryFor(ctx context.Context, projectID string) ([]domain.WorkspaceStatus, error) {
+	if s.statuses == nil {
+		return domain.DefaultStatusDirectory(), nil
+	}
+	p, err := s.projects.GetProject(ctx, projectID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			return nil, httpapi.ErrNotFound("project not found")
+		}
+		return nil, httpapi.ErrInternal("get project failed")
+	}
+	dir, err := s.statuses.ListStatuses(ctx, p.WorkspaceID)
+	if err != nil {
+		return nil, httpapi.ErrInternal("list workspace statuses failed")
+	}
+	return dir, nil
+}
+
+// defaultStatus picks the initial status for a new issue: the first
+// todo-category entry of the directory, falling back to the first entry.
+func defaultStatus(dir []domain.WorkspaceStatus) string {
+	for _, s := range dir {
+		if s.Category == domain.CatTodo {
+			return s.Name
+		}
+	}
+	if len(dir) > 0 {
+		return dir[0].Name
+	}
+	return StatusTodo
+}
+
 func (s *Service) validateAssignee(ctx context.Context, assigneeID string) error {
 	if assigneeID == "" {
 		return nil
@@ -177,7 +220,11 @@ func (s *Service) CreateIssue(ctx context.Context, userID, projectID string, in 
 	if err := s.validateAssignee(ctx, in.AssigneeID); err != nil {
 		return nil, err
 	}
-	status := StatusTodo
+	dir, err := s.directoryFor(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	status := defaultStatus(dir)
 	if in.ParentID != "" {
 		parent, err := s.issues.GetIssue(ctx, in.ParentID)
 		if err == store.ErrNotFound {
@@ -453,7 +500,11 @@ func (s *Service) TransitionStatus(ctx context.Context, userID, issueID, to stri
 	if err != nil {
 		return nil, err
 	}
-	if _, err := Transition(current.Status, to); err != nil {
+	dir, err := s.directoryFor(ctx, current.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := TransitionIn(dir, current.Status, to); err != nil {
 		return nil, err
 	}
 	from := current.Status
@@ -511,7 +562,7 @@ func (s *Service) wakeParentIfChildrenTerminal(ctx context.Context, child *domai
 		return httpapi.ErrInternal("list sibling issues failed")
 	}
 	for _, sib := range siblings {
-		if !IsTerminal(sib.Status) {
+		if !IsTerminalIn(dir, sib.Status) {
 			return nil
 		}
 	}
@@ -528,4 +579,96 @@ func (s *Service) wakeParentIfChildrenTerminal(ctx context.Context, child *domai
 		}
 	}
 	return nil
+}
+
+// StatusInput carries one directory entry for create/update.
+type StatusInput struct {
+	Name     string
+	Category string
+	Position *int
+}
+
+// ListStatuses returns the workspace status directory governing a project.
+// Any project member.
+func (s *Service) ListStatuses(ctx context.Context, userID, projectID string) ([]domain.WorkspaceStatus, error) {
+	if err := s.requireProjectRole(ctx, userID, projectID, "member"); err != nil {
+		return nil, err
+	}
+	return s.directoryFor(ctx, projectID)
+}
+
+// UpsertStatus creates or updates one directory entry on the project's
+// workspace. Owner only; returns the full directory after the write.
+func (s *Service) UpsertStatus(ctx context.Context, userID, projectID string, in StatusInput) ([]domain.WorkspaceStatus, error) {
+	if err := s.requireProjectRole(ctx, userID, projectID, "owner"); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(in.Name) == "" {
+		return nil, httpapi.ErrInvalid("status name is required")
+	}
+	if !domain.IsValidStatusCategory(in.Category) {
+		return nil, httpapi.ErrInvalid("unknown status category: " + in.Category)
+	}
+	if s.statuses == nil {
+		return nil, httpapi.ErrInternal("status directory not configured")
+	}
+	p, err := s.projects.GetProject(ctx, projectID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			return nil, httpapi.ErrNotFound("project not found")
+		}
+		return nil, httpapi.ErrInternal("get project failed")
+	}
+	entry := &domain.WorkspaceStatus{
+		WorkspaceID: p.WorkspaceID,
+		Name:        in.Name,
+		Category:    in.Category,
+	}
+	if in.Position != nil {
+		entry.Position = *in.Position
+	} else {
+		dir, err := s.statuses.ListStatuses(ctx, p.WorkspaceID)
+		if err != nil {
+			return nil, httpapi.ErrInternal("list workspace statuses failed")
+		}
+		entry.Position = len(dir)
+	}
+	if _, err := s.statuses.UpsertStatus(ctx, entry); err != nil {
+		return nil, httpapi.ErrInternal("upsert workspace status failed")
+	}
+	dir, err := s.statuses.ListStatuses(ctx, p.WorkspaceID)
+	if err != nil {
+		return nil, httpapi.ErrInternal("list workspace statuses failed")
+	}
+	return dir, nil
+}
+
+// DeleteStatus removes one directory entry from the project's workspace.
+// Owner only; unknown names are 404. Returns the full directory after the
+// delete.
+func (s *Service) DeleteStatus(ctx context.Context, userID, projectID, name string) ([]domain.WorkspaceStatus, error) {
+	if err := s.requireProjectRole(ctx, userID, projectID, "owner"); err != nil {
+		return nil, err
+	}
+	if s.statuses == nil {
+		return nil, httpapi.ErrInternal("status directory not configured")
+	}
+	p, err := s.projects.GetProject(ctx, projectID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			return nil, httpapi.ErrNotFound("project not found")
+		}
+		return nil, httpapi.ErrInternal("get project failed")
+	}
+	if err := s.statuses.DeleteStatus(ctx, p.WorkspaceID, name); err != nil {
+		if err == store.ErrNotFound {
+			return nil, httpapi.ErrNotFound("status not found")
+		}
+		return nil, httpapi.ErrInternal("delete workspace status failed")
+	}
+	dir, err := s.statuses.ListStatuses(ctx, p.WorkspaceID)
+	if err != nil {
+		return nil, httpapi.ErrInternal("list workspace statuses failed")
+	}
+	return dir, nil
 }

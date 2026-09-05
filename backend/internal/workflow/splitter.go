@@ -170,16 +170,16 @@ func (s *Splitter) generatePhase(ctx context.Context, kind string, data PromptDa
 	}
 	var lastErr error
 	for attempt := 0; attempt <= s.maxRetries; attempt++ {
-		content, err := s.client.Complete(ctx, "", prompt)
+		completion, err := s.client.Complete(ctx, "", prompt)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		if err := validateArtifact(kind, content); err != nil {
+		if err := validateArtifact(kind, completion.Text); err != nil {
 			lastErr = err
 			continue
 		}
-		return content, nil
+		return completion.Text, nil
 	}
 	return "", lastErr
 }

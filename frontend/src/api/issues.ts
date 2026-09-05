@@ -79,6 +79,17 @@ export interface IssueFilter {
   status?: string
   stage?: number
   parent?: string
+  query?: string
+}
+
+export interface IssueEvent {
+  id: string
+  issue_id: string
+  actor_id: string
+  field: string
+  old_value: string
+  new_value: string
+  created_at: string
 }
 
 function issuePath(projectId: string, issueId?: string): string {
@@ -92,6 +103,7 @@ function withQuery(path: string, filter?: IssueFilter): string {
   if (filter.status) params.set('status', filter.status)
   if (filter.stage !== undefined) params.set('stage', String(filter.stage))
   if (filter.parent) params.set('parent', filter.parent)
+  if (filter.query) params.set('q', filter.query)
   const qs = params.toString()
   return qs ? `${path}?${qs}` : path
 }
@@ -142,6 +154,16 @@ export async function transitionIssue(
 export async function listChildren(projectId: string, issueId: string): Promise<Issue[]> {
   const res = await apiFetch<{ issues: Issue[] }>(`${issuePath(projectId, issueId)}/children`)
   return res.issues ?? []
+}
+
+export async function listIssueEvents(
+  projectId: string,
+  issueId: string,
+): Promise<IssueEvent[]> {
+  const res = await apiFetch<{ events: IssueEvent[] }>(
+    `${issuePath(projectId, issueId)}/events`,
+  )
+  return res.events ?? []
 }
 
 export async function listComments(projectId: string, issueId: string): Promise<IssueComment[]> {
@@ -248,4 +270,43 @@ export async function deleteMetadata(
   await apiFetch<void>(`${issuePath(projectId, issueId)}/metadata/${encodeURIComponent(key)}`, {
     method: 'DELETE',
   })
+}
+
+export interface Subscriber {
+  user_id: string
+  display_name: string
+  email: string
+}
+
+export async function listSubscribers(
+  projectId: string,
+  issueId: string,
+): Promise<Subscriber[]> {
+  const res = await apiFetch<{ subscribers: Subscriber[] }>(
+    `${issuePath(projectId, issueId)}/subscribers`,
+  )
+  return res.subscribers ?? []
+}
+
+export async function addSubscriber(
+  projectId: string,
+  issueId: string,
+  email: string,
+): Promise<Subscriber[]> {
+  const res = await apiFetch<{ subscribers: Subscriber[] }>(
+    `${issuePath(projectId, issueId)}/subscribers`,
+    { method: 'POST', body: { email } },
+  )
+  return res.subscribers ?? []
+}
+
+export async function removeSubscriber(
+  projectId: string,
+  issueId: string,
+  userId: string,
+): Promise<void> {
+  await apiFetch<void>(
+    `${issuePath(projectId, issueId)}/subscribers/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+  )
 }

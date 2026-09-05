@@ -7,13 +7,15 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"specpowers/backend/internal/llm"
 )
 
 // finalLLM makes the executor post one final message immediately.
 type finalLLM struct{ message string }
 
-func (f *finalLLM) Complete(_ context.Context, _, _ string) (string, error) {
-	return fmt.Sprintf(`{"action":"final","message":%q}`, f.message), nil
+func (f *finalLLM) Complete(_ context.Context, _, _ string) (llm.Completion, error) {
+	return llm.Completion{Text: fmt.Sprintf(`{"action":"final","message":%q}`, f.message)}, nil
 }
 
 // TestLocalAgentRuntimeEndToEnd drives the SP-27 acceptance path against a

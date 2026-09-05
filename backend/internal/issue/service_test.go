@@ -2,6 +2,7 @@ package issue
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ type fakeIssues struct {
 	wakeups  map[string][]string // parentID -> childIssueIDs
 	byWakeup map[string]bool     // "parent|child"
 	children map[string][]string // parentID -> childIDs in insertion order
+	comments map[string][]string // issueID -> comment contents
 }
 
 func newFakeIssues() *fakeIssues {
@@ -26,6 +28,7 @@ func newFakeIssues() *fakeIssues {
 		wakeups:  map[string][]string{},
 		byWakeup: map[string]bool{},
 		children: map[string][]string{},
+		comments: map[string][]string{},
 	}
 }
 
@@ -102,6 +105,9 @@ func (f *fakeIssues) ListIssues(_ context.Context, projectID string, filter stor
 		if filter.Stage != nil && i.Stage != *filter.Stage {
 			continue
 		}
+		if filter.Query != "" && !fakeIssueMatches(i, f.comments[i.ID], filter.Query) {
+			continue
+		}
 		out = append(out, *i)
 	}
 	// deterministic order for tests: by ID
@@ -111,6 +117,21 @@ func (f *fakeIssues) ListIssues(_ context.Context, projectID string, filter stor
 		}
 	}
 	return out, nil
+}
+
+// fakeIssueMatches mirrors the store-level keyword search: case-insensitive
+// substring match on title, description and comment content.
+func fakeIssueMatches(i *domain.Issue, comments []string, query string) bool {
+	q := strings.ToLower(query)
+	if strings.Contains(strings.ToLower(i.Title), q) || strings.Contains(strings.ToLower(i.Description), q) {
+		return true
+	}
+	for _, c := range comments {
+		if strings.Contains(strings.ToLower(c), q) {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fakeIssues) NextIssuePosition(_ context.Context, projectID, parentID string, stage int) (int, error) {

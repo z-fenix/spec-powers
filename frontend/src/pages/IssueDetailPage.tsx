@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   addComment,
+  addSubscriber,
   deleteMetadata,
   downloadAttachment,
   getIssue,
   listAttachments,
   listChildren,
   listComments,
+  listIssueEvents,
   listMetadata,
+  listSubscribers,
+  removeSubscriber,
   setMetadata,
   transitionIssue,
   updateIssue,
@@ -16,13 +20,28 @@ import {
   type Attachment,
   type Issue,
   type IssueComment,
+  type IssueEvent,
   type MetadataEntry,
+  type Subscriber,
 } from '../api/issues'
+import { listAgents } from '../api/agents'
 import { ApiError } from '../api/client'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
+import {
+  decodeMultiSelect,
+  encodeMultiSelect,
+  listIssueProperties,
+  listPropertyDefinitions,
+  setIssueProperty,
+  type IssuePropertyValue,
+  type PropertyDefinition,
+} from '../api/properties'
 import { StatusIcon } from '../components/StatusIcon'
 import { WorkflowProgress } from '../components/WorkflowProgress'
 import { ArtifactViewer } from '../components/ArtifactViewer'
+import { IssueUsagePanel } from '../components/Usage'
+import { MentionText } from '../components/MentionText'
+import { MentionInput, type MentionCandidate } from '../components/MentionInput'
 import { renderMarkdown } from '../lib/markdown'
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -84,10 +103,12 @@ function CommentThread({
   comment,
   replies,
   onReply,
+  candidates,
 }: {
   comment: IssueComment
   replies: IssueComment[]
   onReply: (parentId: string, content: string) => Promise<void>
+  candidates: MentionCandidate[]
 }) {
   const [text, setText] = useState('')
 
@@ -116,16 +137,68 @@ function CommentThread({
           </div>
         ))}
       </div>
-      <input
-        data-testid={`reply-input-${comment.id}`}
-        placeholder="回复…"
+      <MentionInput
+        testId={`reply-input-${comment.id}`}
+        placeholder="回复…（@ 可提及成员或 Agent）"
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={setText}
+        candidates={candidates}
       />
       <button className="btn btn-primary btn-sm" data-testid={`reply-submit-${comment.id}`} onClick={submit}>
         回复
       </button>
     </div>
+  )
+}
+
+const EVENT_FIELD_LABELS: Record<string, string> = {
+  created: '创建',
+  status: '状态',
+  assignee: '负责人',
+  title: '标题',
+  description: '描述',
+  priority: '优先级',
+  due_date: '截止日',
+  labels: '标签',
+  parent: '父任务',
+  stage: 'Stage',
+  position: '位置',
+}
+
+function TimelinePanel({ projectId, issueId }: { projectId: string; issueId: string }) {
+  const [events, setEvents] = useState<IssueEvent[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    listIssueEvents(projectId, issueId)
+      .then((list) => {
+        if (!cancelled) setEvents(list)
+      })
+      .catch(() => {
+        if (!cancelled) setEvents([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, issueId])
+
+  if (events === null) return <p data-testid="timeline-loading">加载中…</p>
+  if (events.length === 0) return <p data-testid="timeline-empty">暂无变更记录。</p>
+  return (
+    <ul className="issue-timeline" data-testid="timeline">
+      {events.map((e) => (
+        <li key={e.id} data-testid={`timeline-event-${e.field}`}>
+          <span className="badge">{EVENT_FIELD_LABELS[e.field] ?? e.field}</span>{' '}
+          <span data-testid={`timeline-actor-${e.field}`}>{e.actor_id || '系统'}</span>
+          {e.field !== 'created' && (
+            <span data-testid={`timeline-change-${e.field}`}>
+              {' '}
+              {e.old_value || '(空)'} → {e.new_value || '(空)'}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -196,6 +269,182 @@ function MetadataPanel({
   )
 }
 
+function PropertyValueEditor({
+  projectId,
+  issueId,
+  def,
+  value,
+  onChanged,
+}: {
+  projectId: string
+  issueId: string
+  def: PropertyDefinition
+  value: string
+  onChanged: () => void
+}) {
+  const [error, setError] = useState('')
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+
+  const save = (v: string) => {
+    setError('')
+    setIssueProperty(projectId, issueId, def.id, v)
+      .then(onChanged)
+      .catch((err) => setError(errorMessage(err, '保存属性失败')))
+  }
+
+  const testId = `property-input-${def.id}`
+  let editor: ReactNode
+  switch (def.type) {
+    case 'select':
+      editor = (
+        <select
+          data-testid={testId}
+          value={value}
+          onChange={(e) => save(e.target.value)}
+        >
+          <option value="">未设置</option>
+          {def.options.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      )
+      break
+    case 'multi_select': {
+      const picked = decodeMultiSelect(value)
+      const toggle = (o: string, on: boolean) => {
+        const next = on ? [...picked, o] : picked.filter((v) => v !== o)
+        save(encodeMultiSelect(next))
+      }
+      editor = (
+        <span data-testid={testId}>
+          {def.options.map((o) => (
+            <label key={o}>
+              <input
+                type="checkbox"
+                checked={picked.includes(o)}
+                onChange={(e) => toggle(o, e.target.checked)}
+              />{' '}
+              {o}
+            </label>
+          ))}
+        </span>
+      )
+      break
+    }
+    case 'checkbox':
+      editor = (
+        <input
+          data-testid={testId}
+          type="checkbox"
+          checked={value === 'true'}
+          onChange={(e) => save(e.target.checked ? 'true' : 'false')}
+        />
+      )
+      break
+    case 'number':
+      editor = (
+        <input
+          data-testid={testId}
+          type="number"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => draft !== value && save(draft)}
+        />
+      )
+      break
+    case 'date':
+      editor = (
+        <input
+          data-testid={testId}
+          type="date"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => draft !== value && save(draft)}
+        />
+      )
+      break
+    default:
+      editor = (
+        <input
+          data-testid={testId}
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => draft !== value && save(draft)}
+        />
+      )
+  }
+
+  return (
+    <li data-testid={`property-row-${def.id}`}>
+      <strong>{def.name}</strong>{' '}
+      <span className="badge">{def.type}</span> {editor}
+      {error && <span role="alert"> {error}</span>}
+    </li>
+  )
+}
+
+function PropertyValuesPanel({
+  projectId,
+  issueId,
+}: {
+  projectId: string
+  issueId: string
+}) {
+  const [defs, setDefs] = useState<PropertyDefinition[] | null>(null)
+  const [values, setValues] = useState<IssuePropertyValue[] | null>(null)
+
+  const loadValues = useCallback(
+    () =>
+      listIssueProperties(projectId, issueId)
+        .then(setValues)
+        .catch(() => setValues([])),
+    [projectId, issueId],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    listPropertyDefinitions(projectId)
+      .then((list) => {
+        if (!cancelled) setDefs(list ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setDefs([])
+      })
+    loadValues()
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, issueId, loadValues])
+
+  if (defs !== null && defs.length === 0) return null
+  if (defs === null || values === null) return null
+
+  const valueOf = (propertyId: string) =>
+    values.find((v) => v.property_id === propertyId)?.value ?? ''
+
+  return (
+    <div data-testid="property-panel">
+      <h3>属性</h3>
+      <ul>
+        {defs.map((d) => (
+          <PropertyValueEditor
+            key={d.id}
+            projectId={projectId}
+            issueId={issueId}
+            def={d}
+            value={valueOf(d.id)}
+            onChanged={loadValues}
+          />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function AttachmentPanel({
   projectId,
   issueId,
@@ -259,17 +508,84 @@ function AttachmentPanel({
   )
 }
 
+function SubscribersPanel({
+  projectId,
+  issueId,
+  subscribers,
+  onChanged,
+}: {
+  projectId: string
+  issueId: string
+  subscribers: Subscriber[]
+  onChanged: () => void
+}) {
+  const [email, setEmail] = useState('')
+  const [error, setError] = useState('')
+
+  const onAdd = () => {
+    if (!email.trim()) return
+    setError('')
+    addSubscriber(projectId, issueId, email)
+      .then(() => {
+        setEmail('')
+        onChanged()
+      })
+      .catch((err) => setError(errorMessage(err, '添加订阅者失败')))
+  }
+
+  const onRemove = (userId: string) => {
+    setError('')
+    removeSubscriber(projectId, issueId, userId)
+      .then(onChanged)
+      .catch((err) => setError(errorMessage(err, '移除订阅者失败')))
+  }
+
+  return (
+    <div data-testid="subscribers">
+      <h3>订阅者</h3>
+      {error && <p role="alert">{error}</p>}
+      {subscribers.length === 0 && <p>暂无订阅者。</p>}
+      <ul>
+        {subscribers.map((s) => (
+          <li key={s.user_id} data-testid={`subscriber-${s.user_id}`}>
+            {s.display_name || s.email}{' '}
+            <button
+              className="btn btn-ghost btn-sm"
+              data-testid={`subscriber-remove-${s.user_id}`}
+              onClick={() => onRemove(s.user_id)}
+            >
+              移除
+            </button>
+          </li>
+        ))}
+      </ul>
+      <input
+        className="input"
+        data-testid="subscriber-email"
+        placeholder="邮箱"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+      <button className="btn btn-outline btn-sm" data-testid="subscriber-add" onClick={onAdd}>
+        添加
+      </button>
+    </div>
+  )
+}
+
 export function IssueDetailPage() {
   const { id = '', issueId = '' } = useParams()
   const [issue, setIssue] = useState<Issue | null>(null)
   const [comments, setComments] = useState<IssueComment[] | null>(null)
   const [attachments, setAttachments] = useState<Attachment[] | null>(null)
   const [metadata, setMetadataList] = useState<MetadataEntry[] | null>(null)
+  const [subscribers, setSubscribers] = useState<Subscriber[] | null>(null)
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [newComment, setNewComment] = useState('')
+  const [agents, setAgents] = useState<MentionCandidate[]>([])
 
   const loadIssue = useCallback(
     () =>
@@ -303,6 +619,14 @@ export function IssueDetailPage() {
     [id, issueId],
   )
 
+  const loadSubscribers = useCallback(
+    () =>
+      listSubscribers(id, issueId)
+        .then(setSubscribers)
+        .catch(() => setSubscribers([])),
+    [id, issueId],
+  )
+
   useEffect(() => {
     setIssue(null)
     setError('')
@@ -310,7 +634,28 @@ export function IssueDetailPage() {
     loadComments()
     loadAttachments()
     loadMetadata()
-  }, [loadIssue, loadComments, loadAttachments, loadMetadata])
+    loadSubscribers()
+  }, [loadIssue, loadComments, loadAttachments, loadMetadata, loadSubscribers])
+
+  useEffect(() => {
+    let cancelled = false
+    listAgents()
+      .then((list) => {
+        if (!cancelled) {
+          setAgents(
+            list
+              .filter((a) => a.name)
+              .map((a) => ({ kind: 'agent' as const, id: a.id, name: a.name })),
+          )
+        }
+      })
+      .catch(() => {
+        // mention completion is best-effort; agents stay empty on failure
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const onTransition = (status: string) => {
     setError('')
@@ -352,12 +697,24 @@ export function IssueDetailPage() {
     addComment(id, issueId, content, parentId).then(() => loadComments())
 
   if (error && !issue) return <p role="alert">{error}</p>
-  if (!issue || comments === null || attachments === null || metadata === null) {
+  if (!issue || comments === null || attachments === null || metadata === null || subscribers === null) {
     return <p>加载中…</p>
   }
 
   const roots = comments.filter((c) => !c.parent_id)
   const repliesOf = (parentId: string) => comments.filter((c) => c.parent_id === parentId)
+
+  // Member candidates come from comment authors; the backend exposes no
+  // member-name API, so the author id doubles as the display name.
+  const memberCandidates: MentionCandidate[] = []
+  const seenAuthors = new Set<string>()
+  for (const c of comments) {
+    if (c.author_id && !seenAuthors.has(c.author_id)) {
+      seenAuthors.add(c.author_id)
+      memberCandidates.push({ kind: 'member', id: c.author_id, name: c.author_id })
+    }
+  }
+  const candidates = [...agents, ...memberCandidates]
 
   return (
     <div className="page" data-testid="issue-detail">
@@ -414,6 +771,10 @@ export function IssueDetailPage() {
             <div className="detail-section">
               <WorkflowProgress issueId={issueId} />
               <ArtifactViewer issueId={issueId} />
+            </div>
+
+            <div className="detail-section">
+              <IssueUsagePanel issueId={issueId} />
             </div>
 
             <div className="detail-section">
@@ -494,6 +855,12 @@ export function IssueDetailPage() {
             attachments={attachments}
             onChanged={loadAttachments}
           />
+          <SubscribersPanel
+            projectId={id}
+            issueId={issueId}
+            subscribers={subscribers}
+            onChanged={loadSubscribers}
+          />
           <MetadataPanel
             projectId={id}
             issueId={issueId}
@@ -502,6 +869,46 @@ export function IssueDetailPage() {
           />
         </aside>
       </div>
+
+      <PropertyValuesPanel projectId={id} issueId={issueId} />
+
+      <WorkflowProgress issueId={issueId} />
+      <ArtifactViewer issueId={issueId} />
+
+      <h3>评论</h3>
+      {roots.map((c) => (
+        <CommentThread
+          key={c.id}
+          comment={c}
+          replies={repliesOf(c.id)}
+          onReply={onReply}
+        />
+      ))}
+      <form onSubmit={onSubmitComment} className="inline-form">
+        <input
+          data-testid="new-comment"
+          placeholder="写评论…"
+          value={newComment}
+          onChange={(e) => setNewComment(e.target.value)}
+        />
+        <button type="submit" data-testid="submit-comment">
+          评论
+        </button>
+      </form>
+
+      <AttachmentPanel
+        projectId={id}
+        issueId={issueId}
+        attachments={attachments}
+        onChanged={loadAttachments}
+      />
+      <MetadataPanel
+        projectId={id}
+        issueId={issueId}
+        entries={metadata}
+        onChanged={loadMetadata}
+      />
+    </section>
     </div>
   )
 }

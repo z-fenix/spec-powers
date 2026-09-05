@@ -2,11 +2,15 @@ package issue
 
 import (
 	"context"
+	"log"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"specpowers/backend/internal/domain"
 	"specpowers/backend/internal/httpapi"
+	"specpowers/backend/internal/notification"
 	"specpowers/backend/internal/store"
 )
 
@@ -20,11 +24,14 @@ type RunTrigger interface {
 }
 
 type Service struct {
-	issues   store.IssueStore
-	projects store.ProjectStore
-	users    store.UserStore
-	statuses store.WorkspaceStatusStore
-	trigger  RunTrigger
+	issues      store.IssueStore
+	projects    store.ProjectStore
+	users       store.UserStore
+	trigger     RunTrigger
+	subscribers store.SubscriberStore
+	notifier    notification.Sink
+	// events records the issue timeline; nil disables event recording.
+	events store.IssueEventStore
 }
 
 func NewService(issues store.IssueStore, projects store.ProjectStore, users store.UserStore) *Service {
@@ -44,6 +51,44 @@ func (s *Service) WithStatusStore(st store.WorkspaceStatusStore) *Service {
 func (s *Service) WithRunTrigger(t RunTrigger) *Service {
 	s.trigger = t
 	return s
+}
+
+// WithSubscribers installs the subscriber store; new issues then subscribe
+// their creator by default.
+func (s *Service) WithSubscribers(sub store.SubscriberStore) *Service {
+	s.subscribers = sub
+	return s
+}
+
+// WithNotifier installs a notification sink; status transitions then notify
+// the issue's subscribers (except the actor).
+func (s *Service) WithNotifier(n notification.Sink) *Service {
+	s.notifier = n
+	return s
+// WithEventStore installs the timeline event store; issue creation, field
+// updates and status transitions then append events.
+func (s *Service) WithEventStore(e store.IssueEventStore) *Service {
+	s.events = e
+	return s
+}
+
+// recordEvent appends one timeline event. Recording failures fail the
+// calling operation so the timeline never silently diverges from state.
+func (s *Service) recordEvent(ctx context.Context, issueID, actorID, field, oldValue, newValue string) error {
+	if s.events == nil {
+		return nil
+	}
+	_, err := s.events.CreateIssueEvent(ctx, &domain.IssueEvent{
+		IssueID:  issueID,
+		ActorID:  actorID,
+		Field:    field,
+		OldValue: oldValue,
+		NewValue: newValue,
+	})
+	if err != nil {
+		return httpapi.ErrInternal("record issue event failed")
+	}
+	return nil
 }
 
 type CreateInput struct {
@@ -214,6 +259,11 @@ func (s *Service) CreateIssue(ctx context.Context, userID, projectID string, in 
 	if err != nil {
 		return nil, httpapi.ErrInternal("create issue failed")
 	}
+	if s.subscribers != nil {
+		if err := s.subscribers.AddIssueSubscriber(ctx, created.ID, userID); err != nil {
+			log.Printf("issue: subscribe creator failed: %v", err)
+	if err := s.recordEvent(ctx, created.ID, userID, "created", "", created.Title); err != nil {
+		return nil, err
 	if s.trigger != nil && in.AssigneeID != "" {
 		if err := s.trigger.OnIssueAssigned(ctx, created); err != nil {
 			return nil, httpapi.ErrInternal("notify assignment failed")
@@ -286,12 +336,89 @@ func (s *Service) UpdateIssue(ctx context.Context, userID, issueID string, in Up
 	if err != nil {
 		return nil, httpapi.ErrInternal("update issue failed")
 	}
+	if err := s.recordFieldEvents(ctx, userID, current, saved, in); err != nil {
+		return nil, err
+	}
 	if s.trigger != nil && in.AssigneeID != nil && *in.AssigneeID != "" && *in.AssigneeID != current.AssigneeID {
 		if err := s.trigger.OnIssueAssigned(ctx, saved); err != nil {
 			return nil, httpapi.ErrInternal("notify assignment failed")
 		}
 	}
 	return saved, nil
+}
+
+// recordFieldEvents appends one event per changed tracked field. Values are
+// stored in their display form; empty means unset.
+func (s *Service) recordFieldEvents(ctx context.Context, userID string, before, after *domain.Issue, in UpdateInput) error {
+	if s.events == nil {
+		return nil
+	}
+	type change struct{ field, oldV, newV string }
+	var changes []change
+	if in.Title != nil && before.Title != after.Title {
+		changes = append(changes, change{"title", before.Title, after.Title})
+	}
+	if in.Description != nil && before.Description != after.Description {
+		changes = append(changes, change{"description", before.Description, after.Description})
+	}
+	if in.Priority != nil && before.Priority != after.Priority {
+		changes = append(changes, change{"priority", before.Priority, after.Priority})
+	}
+	if in.AssigneeID != nil && before.AssigneeID != after.AssigneeID {
+		changes = append(changes, change{"assignee", before.AssigneeID, after.AssigneeID})
+	}
+	if in.DueDate != nil && !dueEqual(before.DueDate, after.DueDate) {
+		changes = append(changes, change{"due_date", formatDue(before.DueDate), formatDue(after.DueDate)})
+	}
+	if in.Labels != nil && !slices.Equal(before.Labels, after.Labels) {
+		changes = append(changes, change{"labels", strings.Join(before.Labels, ","), strings.Join(after.Labels, ",")})
+	}
+	if in.Stage != nil && before.Stage != after.Stage {
+		changes = append(changes, change{"stage", strconv.Itoa(before.Stage), strconv.Itoa(after.Stage)})
+	}
+	if in.ParentID != nil && before.ParentID != after.ParentID {
+		changes = append(changes, change{"parent", before.ParentID, after.ParentID})
+	}
+	// Position changes are pure kanban ordering, not tracked field history.
+	for _, c := range changes {
+		if err := s.recordEvent(ctx, after.ID, userID, c.field, c.oldV, c.newV); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func dueEqual(a, b *time.Time) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Equal(*b)
+}
+
+func formatDue(d *time.Time) string {
+	if d == nil {
+		return ""
+	}
+	return d.Format("2006-01-02")
+}
+
+// GetIssueTimeline returns the issue's events, oldest first.
+func (s *Service) GetIssueTimeline(ctx context.Context, userID, issueID string) ([]domain.IssueEvent, error) {
+	i, err := s.requireProjectIssue(ctx, userID, issueID)
+	if err != nil {
+		return nil, err
+	}
+	if s.events == nil {
+		return nil, nil
+	}
+	list, err := s.events.ListIssueEvents(ctx, i.ID)
+	if err != nil {
+		return nil, httpapi.ErrInternal("list issue events failed")
+	}
+	return list, nil
 }
 
 // validateNewParent checks a parent move: parent must exist in the same
@@ -366,7 +493,8 @@ func (s *Service) GetChildren(ctx context.Context, userID, issueID string) ([]do
 // TransitionStatus moves an issue through the kanban state machine. When the
 // issue is a child and reaches a terminal state while every sibling is also
 // terminal, a wakeup is recorded on the parent so its assignee can be woken
-// for acceptance (Multica-compatible behavior).
+// for acceptance (Multica-compatible behavior). Subscribers are notified
+// about the transition, except the actor.
 func (s *Service) TransitionStatus(ctx context.Context, userID, issueID, to string) (*domain.Issue, error) {
 	current, err := s.requireProjectIssue(ctx, userID, issueID)
 	if err != nil {
@@ -379,12 +507,17 @@ func (s *Service) TransitionStatus(ctx context.Context, userID, issueID, to stri
 	if _, err := TransitionIn(dir, current.Status, to); err != nil {
 		return nil, err
 	}
+	from := current.Status
+	oldStatus := current.Status
 	current.Status = to
 	saved, err := s.issues.UpdateIssue(ctx, current)
 	if err != nil {
 		return nil, httpapi.ErrInternal("update issue failed")
 	}
-	if err := s.wakeParentIfChildrenTerminal(ctx, saved, dir); err != nil {
+	if err := s.recordEvent(ctx, saved.ID, userID, "status", oldStatus, to); err != nil {
+		return nil, err
+	}
+	if err := s.wakeParentIfChildrenTerminal(ctx, saved); err != nil {
 		return nil, err
 	}
 	if s.trigger != nil {
@@ -392,11 +525,36 @@ func (s *Service) TransitionStatus(ctx context.Context, userID, issueID, to stri
 			return nil, httpapi.ErrInternal("notify status change failed")
 		}
 	}
+	s.notifySubscribersStatusChanged(ctx, userID, saved, from, to)
 	return saved, nil
 }
 
-func (s *Service) wakeParentIfChildrenTerminal(ctx context.Context, child *domain.Issue, dir []domain.WorkspaceStatus) error {
-	if child.ParentID == "" || !IsTerminalIn(dir, child.Status) {
+// notifySubscribersStatusChanged is best-effort: subscriber lookups and
+// delivery failures never fail the transition itself.
+func (s *Service) notifySubscribersStatusChanged(ctx context.Context, actorID string, i *domain.Issue, from, to string) {
+	if s.notifier == nil || s.subscribers == nil {
+		return
+	}
+	users, err := s.subscribers.ListIssueSubscribers(ctx, i.ID)
+	if err != nil {
+		log.Printf("issue: list subscribers failed: %v", err)
+		return
+	}
+	ids := make([]string, 0, len(users))
+	for _, u := range users {
+		ids = append(ids, u.ID)
+	}
+	notification.NotifyMany(ctx, s.notifier, ids, actorID, notification.NotifyInput{
+		Kind:      "status_changed",
+		Title:     "Status changed on: " + i.Title,
+		Body:      from + " → " + to,
+		IssueID:   i.ID,
+		ProjectID: i.ProjectID,
+	})
+}
+
+func (s *Service) wakeParentIfChildrenTerminal(ctx context.Context, child *domain.Issue) error {
+	if child.ParentID == "" || !IsTerminal(child.Status) {
 		return nil
 	}
 	siblings, err := s.issues.ListIssues(ctx, child.ProjectID, store.IssueFilter{ParentID: &child.ParentID})

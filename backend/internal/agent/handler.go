@@ -55,6 +55,7 @@ func (h *Handler) RunRoutes() http.Handler {
 	r.Use(auth.RequireAuth(h.tokens))
 	r.Post("/", h.triggerRun)
 	r.Get("/", h.listRuns)
+	r.Get("/usage", h.usageTotals)
 	r.Get("/{runID}", h.getRun)
 	return r
 }
@@ -297,4 +298,59 @@ func (h *Handler) getRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpapi.JSON(w, http.StatusOK, map[string]any{"run": toRunDTO(run), "logs": toRunLogDTOs(logs)})
+}
+
+// ---- usage ----
+
+type usageTotalsDTO struct {
+	Calls            int   `json:"calls"`
+	PromptTokens     int64 `json:"prompt_tokens"`
+	CompletionTokens int64 `json:"completion_tokens"`
+}
+
+type issueUsageDTO struct {
+	IssueID          string `json:"issue_id"`
+	Title            string `json:"title"`
+	Calls            int    `json:"calls"`
+	PromptTokens     int64  `json:"prompt_tokens"`
+	CompletionTokens int64  `json:"completion_tokens"`
+}
+
+// usageTotals serves GET /runs/usage?issue_id=... or ?project_id=...:
+// LLM token usage aggregated per issue (issue query) or per issue of one
+// project (project query). Exactly one of the two params is required.
+func (h *Handler) usageTotals(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	issueID, projectID := q.Get("issue_id"), q.Get("project_id")
+	if (issueID == "") == (projectID == "") {
+		httpapi.Error(w, httpapi.ErrInvalid("exactly one of issue_id or project_id is required"))
+		return
+	}
+	if issueID != "" {
+		t, err := h.runs.IssueUsage(r.Context(), issueID)
+		if err != nil {
+			httpapi.Error(w, httpapi.ErrInternal("issue usage failed"))
+			return
+		}
+		httpapi.JSON(w, http.StatusOK, map[string]any{
+			"issue_id": issueID,
+			"usage": usageTotalsDTO{
+				Calls: t.Calls, PromptTokens: t.PromptTokens, CompletionTokens: t.CompletionTokens,
+			},
+		})
+		return
+	}
+	list, err := h.runs.ProjectUsage(r.Context(), projectID)
+	if err != nil {
+		httpapi.Error(w, httpapi.ErrInternal("project usage failed"))
+		return
+	}
+	dtos := make([]issueUsageDTO, 0, len(list))
+	for _, u := range list {
+		dtos = append(dtos, issueUsageDTO{
+			IssueID: u.IssueID, Title: u.Title,
+			Calls: u.Calls, PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens,
+		})
+	}
+	httpapi.JSON(w, http.StatusOK, map[string]any{"project_id": projectID, "usage": dtos})
 }

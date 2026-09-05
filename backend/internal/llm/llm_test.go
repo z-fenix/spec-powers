@@ -47,7 +47,7 @@ func newTestServer(t *testing.T, status int, body string, captured *capturedRequ
 
 func TestOpenAIClientComplete(t *testing.T) {
 	captured := &capturedRequest{}
-	srv := newTestServer(t, http.StatusOK, `{"choices":[{"message":{"role":"assistant","content":"hello output"}}]}`, captured)
+	srv := newTestServer(t, http.StatusOK, `{"choices":[{"message":{"role":"assistant","content":"hello output"}}],"usage":{"prompt_tokens":11,"completion_tokens":7}}`, captured)
 	defer srv.Close()
 
 	c := &OpenAIClient{BaseURL: srv.URL, APIKey: "sk-test", Model: "m1"}
@@ -55,8 +55,11 @@ func TestOpenAIClientComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
-	if got != "hello output" {
-		t.Errorf("Complete = %q, want %q", got, "hello output")
+	if got.Text != "hello output" {
+		t.Errorf("Complete = %q, want %q", got.Text, "hello output")
+	}
+	if got.PromptTokens != 11 || got.CompletionTokens != 7 {
+		t.Errorf("usage = (%d, %d), want (11, 7)", got.PromptTokens, got.CompletionTokens)
 	}
 	if captured.auth != "Bearer sk-test" {
 		t.Errorf("Authorization = %q, want Bearer sk-test", captured.auth)
@@ -71,6 +74,20 @@ func TestOpenAIClientComplete(t *testing.T) {
 		captured.messages[0].Role != "system" || captured.messages[0].Content != "be a splitter" ||
 		captured.messages[1].Role != "user" || captured.messages[1].Content != "split this" {
 		t.Errorf("messages = %+v, want [system, user]", captured.messages)
+	}
+}
+
+func TestOpenAIClientCompleteOmitsUsage(t *testing.T) {
+	srv := newTestServer(t, http.StatusOK, `{"choices":[{"message":{"role":"assistant","content":"no usage block"}}]}`, nil)
+	defer srv.Close()
+
+	c := &OpenAIClient{BaseURL: srv.URL, APIKey: "sk-test", Model: "m1"}
+	got, err := c.Complete(context.Background(), "s", "u")
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if got.PromptTokens != 0 || got.CompletionTokens != 0 {
+		t.Errorf("usage = (%d, %d), want zeros when the endpoint omits usage", got.PromptTokens, got.CompletionTokens)
 	}
 }
 
@@ -124,7 +141,7 @@ func TestOpenAIClientIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("integration Complete: %v", err)
 	}
-	if strings.TrimSpace(out) == "" {
+	if strings.TrimSpace(out.Text) == "" {
 		t.Error("integration output should not be empty")
 	}
 }

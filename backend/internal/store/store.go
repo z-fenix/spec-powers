@@ -66,11 +66,13 @@ type ProjectStore interface {
 
 // IssueFilter narrows ListIssues. ParentID nil means "no filter"; a pointer
 // to "" selects root issues only. Empty Status means all statuses; nil Stage
-// means all stages.
+// means all stages. Non-empty Query does a case-insensitive keyword match on
+// title, description and comment content.
 type IssueFilter struct {
 	ParentID *string
 	Status   string
 	Stage    *int
+	Query    string
 }
 
 type IssueStore interface {
@@ -86,6 +88,13 @@ type IssueStore interface {
 	// terminal state; repeats for the same pair are idempotent.
 	CreateIssueWakeup(ctx context.Context, issueID, childIssueID string) error
 	ListIssueWakeups(ctx context.Context, issueID string) ([]domain.IssueWakeup, error)
+}
+
+// IssueEventStore records and lists an issue's timeline events. Events are
+// append-only; ListIssueEvents returns them oldest first.
+type IssueEventStore interface {
+	CreateIssueEvent(ctx context.Context, e *domain.IssueEvent) (*domain.IssueEvent, error)
+	ListIssueEvents(ctx context.Context, issueID string) ([]domain.IssueEvent, error)
 }
 
 type CommentStore interface {
@@ -108,6 +117,28 @@ type IssueMetadataStore interface {
 	SetIssueMetadata(ctx context.Context, m *domain.IssueMetadata) (*domain.IssueMetadata, error)
 	ListIssueMetadata(ctx context.Context, issueID string) ([]domain.IssueMetadata, error)
 	DeleteIssueMetadata(ctx context.Context, issueID, key string) error
+}
+
+// SubscriberStore is the per-issue subscriber list. Add is idempotent;
+// Remove reports ErrNotFound for a user that is not subscribed. List returns
+// the subscribers' user rows, oldest subscription first.
+type SubscriberStore interface {
+	AddIssueSubscriber(ctx context.Context, issueID, userID string) error
+	RemoveIssueSubscriber(ctx context.Context, issueID, userID string) error
+	ListIssueSubscribers(ctx context.Context, issueID string) ([]domain.User, error)
+// PropertyStore covers project-level custom property definitions and the
+// per-issue values assigned to them. SetIssueProperty is an upsert on
+// (issue_id, property_id); deleting a definition cascades to its values.
+type PropertyStore interface {
+	CreatePropertyDefinition(ctx context.Context, d *domain.PropertyDefinition) (*domain.PropertyDefinition, error)
+	GetPropertyDefinition(ctx context.Context, id string) (*domain.PropertyDefinition, error)
+	ListPropertyDefinitions(ctx context.Context, projectID string) ([]domain.PropertyDefinition, error)
+	UpdatePropertyDefinition(ctx context.Context, d *domain.PropertyDefinition) (*domain.PropertyDefinition, error)
+	DeletePropertyDefinition(ctx context.Context, id string) error
+	SetIssueProperty(ctx context.Context, v *domain.IssuePropertyValue) (*domain.IssuePropertyValue, error)
+	ListIssueProperties(ctx context.Context, issueID string) ([]domain.IssuePropertyValue, error)
+	ListIssuePropertiesForProject(ctx context.Context, projectID string) ([]domain.IssuePropertyValue, error)
+	DeleteIssueProperty(ctx context.Context, issueID, propertyID string) error
 }
 
 type AgentStore interface {
@@ -142,6 +173,15 @@ type RunStore interface {
 	// FinishRun sets a run's terminal status ("done" or "failed") with an
 	// optional error message and stamps finished_at.
 	FinishRun(ctx context.Context, id, status, errMsg string) (*domain.Run, error)
+	// RecordRunUsage appends one LLM completion's token usage to the run.
+	// Called once per completion so usage survives a run that later fails.
+	RecordRunUsage(ctx context.Context, runID string, promptTokens, completionTokens int64) error
+	// IssueUsage aggregates the token usage of every completion of one
+	// issue's runs.
+	IssueUsage(ctx context.Context, issueID string) (*domain.UsageTotals, error)
+	// ProjectUsage aggregates token usage per issue of one project, ordered
+	// by issue title. Issues without recorded usage are omitted.
+	ProjectUsage(ctx context.Context, projectID string) ([]domain.IssueUsage, error)
 }
 
 type RunLogStore interface {

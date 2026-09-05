@@ -82,6 +82,43 @@ type Issue struct {
 	UpdatedAt   time.Time
 }
 
+// PropertyDefinition is a project-level custom property. Type is one of
+// "select", "multi_select", "checkbox", "text", "number" or "date"; Options
+// holds the allowed values for select / multi_select (empty for the others).
+type PropertyDefinition struct {
+	ID        string
+	ProjectID string
+	Name      string
+	Type      string
+	Options   []string
+	Position  int
+	CreatedAt time.Time
+}
+
+// IssuePropertyValue is the value one issue carries for one property
+// definition. Value is the canonical string form: plain text, a number
+// literal, "true"/"false", "YYYY-MM-DD", a select option, or a JSON array of
+// select options for multi_select.
+type IssuePropertyValue struct {
+	IssueID    string
+	PropertyID string
+	Value      string
+	UpdatedAt  time.Time
+}
+
+// IssueEvent is one timeline entry of an issue: a field (or status/assignee)
+// change. Field "created" marks the issue's creation. ActorID is the user who
+// made the change; empty values mean "unset" (e.g. unassigned).
+type IssueEvent struct {
+	ID        string
+	IssueID   string
+	ActorID   string
+	Field     string
+	OldValue  string
+	NewValue  string
+	CreatedAt time.Time
+}
+
 // IssueWakeup records that a parent issue's owner should be woken because
 // every child issue reached a terminal state. Consumed by the agent runtime.
 type IssueWakeup struct {
@@ -126,6 +163,15 @@ type IssueMetadata struct {
 	Value     string
 	Type      string
 	UpdatedAt time.Time
+}
+
+// IssueSubscriber is a user watching an issue. Subscribers are notified on
+// comments, status changes and run completions; an issue's creator is
+// subscribed automatically.
+type IssueSubscriber struct {
+	IssueID   string
+	UserID    string
+	CreatedAt time.Time
 }
 
 // Change is a workflow instance: the classic split flow (proposal → specs →
@@ -197,6 +243,32 @@ type Run struct {
 	CreatedAt  time.Time
 	StartedAt  *time.Time
 	FinishedAt *time.Time
+}
+
+// RunUsage records one LLM completion's token consumption for a run: one row
+// per completion, recorded as the executor consumes it so usage survives a
+// run that later fails.
+type RunUsage struct {
+	RunID            string
+	PromptTokens     int64
+	CompletionTokens int64
+	CreatedAt        time.Time
+}
+
+// UsageTotals aggregates LLM token consumption across completions. Calls is
+// the number of recorded completions.
+type UsageTotals struct {
+	Calls            int
+	PromptTokens     int64
+	CompletionTokens int64
+}
+
+// IssueUsage is one issue's aggregated token usage; Title is the issue's
+// title so project-level listings can be rendered without extra lookups.
+type IssueUsage struct {
+	IssueID string
+	Title   string
+	UsageTotals
 }
 
 // RunLog is one entry of a run's execution log. Kind is "llm_request",

@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,6 +17,13 @@ type IssueStore struct {
 }
 
 func NewIssueStore(pool *pgxpool.Pool) *IssueStore { return &IssueStore{pool: pool} }
+
+// ilikePattern turns a keyword into a substring ILIKE pattern with the
+// wildcard metacharacters escaped.
+func ilikePattern(q string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return "%" + r.Replace(q) + "%"
+}
 
 // issueColumns: nullable uuid columns are coerced to text with ” for NULL so
 // they scan into plain Go strings.
@@ -120,6 +128,13 @@ func (s *IssueStore) ListIssues(ctx context.Context, projectID string, filter st
 	if filter.Stage != nil {
 		args = append(args, *filter.Stage)
 		where += fmt.Sprintf(" AND stage = $%d", len(args))
+	}
+	if filter.Query != "" {
+		args = append(args, ilikePattern(filter.Query))
+		pat := fmt.Sprintf("$%d", len(args))
+		where += fmt.Sprintf(` AND (title ILIKE %s OR description ILIKE %s OR EXISTS (
+			SELECT 1 FROM issue_comments c
+			WHERE c.issue_id = issues.id AND c.content ILIKE %s))`, pat, pat, pat)
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+issueColumns+`

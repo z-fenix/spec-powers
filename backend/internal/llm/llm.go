@@ -13,9 +13,17 @@ import (
 	"time"
 )
 
+// Completion is one model reply plus the token usage the endpoint reported
+// for it. Usage is zero when the endpoint omits the usage block.
+type Completion struct {
+	Text             string
+	PromptTokens     int64
+	CompletionTokens int64
+}
+
 // Client generates one completion for a system + user prompt pair.
 type Client interface {
-	Complete(ctx context.Context, system, user string) (string, error)
+	Complete(ctx context.Context, system, user string) (Completion, error)
 }
 
 // OpenAIClient talks to any OpenAI-compatible /chat/completions endpoint.
@@ -51,14 +59,18 @@ type chatResponse struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int64 `json:"prompt_tokens"`
+		CompletionTokens int64 `json:"completion_tokens"`
+	} `json:"usage"`
 }
 
-func (c *OpenAIClient) Complete(ctx context.Context, system, user string) (string, error) {
+func (c *OpenAIClient) Complete(ctx context.Context, system, user string) (Completion, error) {
 	if c.APIKey == "" {
-		return "", fmt.Errorf("llm: API key is required")
+		return Completion{}, fmt.Errorf("llm: API key is required")
 	}
 	if c.Model == "" {
-		return "", fmt.Errorf("llm: model is required")
+		return Completion{}, fmt.Errorf("llm: model is required")
 	}
 	body, err := json.Marshal(chatRequest{
 		Model: c.Model,
@@ -68,11 +80,11 @@ func (c *OpenAIClient) Complete(ctx context.Context, system, user string) (strin
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("llm: encode request: %w", err)
+		return Completion{}, fmt.Errorf("llm: encode request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("llm: build request: %w", err)
+		return Completion{}, fmt.Errorf("llm: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
@@ -83,18 +95,22 @@ func (c *OpenAIClient) Complete(ctx context.Context, system, user string) (strin
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("llm: call failed: %w", err)
+		return Completion{}, fmt.Errorf("llm: call failed: %w", err)
 	}
 	defer resp.Body.Close()
 	var parsed chatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return "", fmt.Errorf("llm: decode response (status %d): %w", resp.StatusCode, err)
+		return Completion{}, fmt.Errorf("llm: decode response (status %d): %w", resp.StatusCode, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("llm: endpoint returned status %d", resp.StatusCode)
+		return Completion{}, fmt.Errorf("llm: endpoint returned status %d", resp.StatusCode)
 	}
 	if len(parsed.Choices) == 0 {
-		return "", fmt.Errorf("llm: response has no choices")
+		return Completion{}, fmt.Errorf("llm: response has no choices")
 	}
-	return parsed.Choices[0].Message.Content, nil
+	return Completion{
+		Text:             parsed.Choices[0].Message.Content,
+		PromptTokens:     parsed.Usage.PromptTokens,
+		CompletionTokens: parsed.Usage.CompletionTokens,
+	}, nil
 }

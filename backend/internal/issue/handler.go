@@ -20,6 +20,9 @@ type Handler struct {
 	// collab is the comment/attachment/metadata subrouter mounted under
 	// /{issueID}; nil in tests that don't exercise collaboration.
 	collab http.Handler
+	// properties is the issue property-value subrouter mounted under
+	// /{issueID}/properties; nil in tests that don't exercise properties.
+	properties http.Handler
 }
 
 func NewHandler(svc *Service, tokens *auth.TokenService) *Handler {
@@ -29,6 +32,13 @@ func NewHandler(svc *Service, tokens *auth.TokenService) *Handler {
 // WithCollab attaches the collaboration subrouter served under /{issueID}.
 func (h *Handler) WithCollab(c http.Handler) *Handler {
 	h.collab = c
+	return h
+}
+
+// WithProperties attaches the property-value subrouter served under
+// /{issueID}/properties.
+func (h *Handler) WithProperties(p http.Handler) *Handler {
+	h.properties = p
 	return h
 }
 
@@ -94,6 +104,10 @@ func (h *Handler) Routes() http.Handler {
 		r.Delete("/", h.remove)
 		r.Post("/status", h.transition)
 		r.Get("/children", h.children)
+		if h.properties != nil {
+			r.Mount("/properties", h.properties)
+		}
+		r.Get("/events", h.events)
 		if h.collab != nil {
 			r.Mount("/", h.collab)
 		}
@@ -158,9 +172,9 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	httpapi.JSON(w, http.StatusCreated, map[string]any{"issue": toIssueDTO(i)})
 }
 
-// parseListFilter reads list query params: status, stage and parent
-// ("root" selects root issues only). Unknown values are silently ignored
-// except stage, which must be numeric.
+// parseListFilter reads list query params: status, stage, parent ("root"
+// selects root issues only) and the q search keyword. Unknown values are
+// silently ignored except stage, which must be numeric.
 func parseListFilter(r *http.Request) (store.IssueFilter, error) {
 	var filter store.IssueFilter
 	q := r.URL.Query()
@@ -180,6 +194,9 @@ func parseListFilter(r *http.Request) (store.IssueFilter, error) {
 			parent = ""
 		}
 		filter.ParentID = &parent
+	}
+	if s := q.Get("q"); s != "" {
+		filter.Query = s
 	}
 	return filter, nil
 }
@@ -313,6 +330,18 @@ func (h *Handler) putStatus(w http.ResponseWriter, r *http.Request) {
 		Category: req.Category,
 		Position: req.Position,
 	})
+type issueEventDTO struct {
+	ID        string `json:"id"`
+	IssueID   string `json:"issue_id"`
+	ActorID   string `json:"actor_id"`
+	Field     string `json:"field"`
+	OldValue  string `json:"old_value"`
+	NewValue  string `json:"new_value"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (h *Handler) events(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.GetIssueTimeline(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "issueID"))
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -327,4 +356,13 @@ func (h *Handler) removeStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpapi.JSON(w, http.StatusOK, map[string]any{"statuses": toStatusDTOs(list)})
+	dtos := make([]issueEventDTO, 0, len(list))
+	for _, e := range list {
+		dtos = append(dtos, issueEventDTO{
+			ID: e.ID, IssueID: e.IssueID, ActorID: e.ActorID, Field: e.Field,
+			OldValue: e.OldValue, NewValue: e.NewValue,
+			CreatedAt: e.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	httpapi.JSON(w, http.StatusOK, map[string]any{"events": dtos})
 }

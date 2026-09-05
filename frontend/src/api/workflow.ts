@@ -20,6 +20,7 @@ export interface Artifact {
   version: number
   content: string
   created_by: string
+  run_id: string | null
   created_at: string
 }
 

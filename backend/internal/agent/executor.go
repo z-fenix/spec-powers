@@ -256,7 +256,7 @@ func (e *Executor) runTool(ctx context.Context, run *domain.Run, agent *domain.A
 	case "write_artifact":
 		kind, _ := a.Args["kind"].(string)
 		content, _ := a.Args["content"].(string)
-		art, err := e.flow.WriteArtifact(ctx, agent.ID, change, kind, content)
+		art, err := e.flow.WriteArtifact(ctx, agent.ID, change, kind, content, run.ID)
 		if err != nil {
 			return mustJSON(map[string]any{"error": err.Error()})
 		}
@@ -270,7 +270,7 @@ func (e *Executor) runTool(ctx context.Context, run *domain.Run, agent *domain.A
 		return mustJSON(map[string]any{"change": change})
 	case "submit_verify":
 		content, _ := a.Args["content"].(string)
-		art, err := e.flow.SubmitVerify(ctx, agent.ID, change, content)
+		art, err := e.flow.SubmitVerify(ctx, agent.ID, change, content, run.ID)
 		if err != nil {
 			return mustJSON(map[string]any{"error": err.Error()})
 		}

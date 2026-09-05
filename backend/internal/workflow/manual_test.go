@@ -128,7 +128,7 @@ func TestWriteArtifact(t *testing.T) {
 	f.issues.byID["i1"] = &domain.Issue{ID: "i1", ProjectID: "p1"}
 
 	t.Run("member writes a proposal artifact", func(t *testing.T) {
-		a, err := f.svc.WriteArtifact(context.Background(), "alice", "c1", KindProposal, "# 提案")
+		a, err := f.svc.WriteArtifact(context.Background(), "alice", "c1", KindProposal, "# 提案", "")
 		if err != nil {
 			t.Fatalf("write artifact: %v", err)
 		}
@@ -138,7 +138,7 @@ func TestWriteArtifact(t *testing.T) {
 	})
 
 	t.Run("rewriting bumps the version", func(t *testing.T) {
-		a, err := f.svc.WriteArtifact(context.Background(), "alice", "c1", KindProposal, "# 提案 v2")
+		a, err := f.svc.WriteArtifact(context.Background(), "alice", "c1", KindProposal, "# 提案 v2", "")
 		if err != nil {
 			t.Fatalf("rewrite artifact: %v", err)
 		}
@@ -147,8 +147,18 @@ func TestWriteArtifact(t *testing.T) {
 		}
 	})
 
+	t.Run("run id is recorded on the artifact", func(t *testing.T) {
+		a, err := f.svc.WriteArtifact(context.Background(), "alice", "c1", KindProposal, "# 提案 run", "run-9")
+		if err != nil {
+			t.Fatalf("write artifact: %v", err)
+		}
+		if a.RunID != "run-9" {
+			t.Errorf("RunID = %q, want run-9", a.RunID)
+		}
+	})
+
 	t.Run("tasks write creates sub-issues and mappings", func(t *testing.T) {
-		a, err := f.svc.WriteArtifact(context.Background(), "alice", "c1", KindTasks, manualTasksMD)
+		a, err := f.svc.WriteArtifact(context.Background(), "alice", "c1", KindTasks, manualTasksMD, "")
 		if err != nil {
 			t.Fatalf("write tasks: %v", err)
 		}
@@ -165,7 +175,7 @@ func TestWriteArtifact(t *testing.T) {
 	})
 
 	t.Run("tasks write with invalid json is rejected", func(t *testing.T) {
-		_, err := f.svc.WriteArtifact(context.Background(), "alice", "c1", KindTasks, "没有 json 块")
+		_, err := f.svc.WriteArtifact(context.Background(), "alice", "c1", KindTasks, "没有 json 块", "")
 		appErr, ok := err.(*httpapi.AppError)
 		if !ok || appErr.Status != 400 {
 			t.Errorf("error = %v, want 400", err)
@@ -173,7 +183,7 @@ func TestWriteArtifact(t *testing.T) {
 	})
 
 	t.Run("unknown kind is invalid", func(t *testing.T) {
-		_, err := f.svc.WriteArtifact(context.Background(), "alice", "c1", "verify", "x")
+		_, err := f.svc.WriteArtifact(context.Background(), "alice", "c1", "verify", "x", "")
 		appErr, ok := err.(*httpapi.AppError)
 		if !ok || appErr.Status != 400 {
 			t.Errorf("error = %v, want 400", err)
@@ -181,7 +191,7 @@ func TestWriteArtifact(t *testing.T) {
 	})
 
 	t.Run("empty content is invalid", func(t *testing.T) {
-		_, err := f.svc.WriteArtifact(context.Background(), "alice", "c1", KindSpecs, "  ")
+		_, err := f.svc.WriteArtifact(context.Background(), "alice", "c1", KindSpecs, "  ", "")
 		appErr, ok := err.(*httpapi.AppError)
 		if !ok || appErr.Status != 400 {
 			t.Errorf("error = %v, want 400", err)
@@ -190,7 +200,7 @@ func TestWriteArtifact(t *testing.T) {
 
 	t.Run("archived change conflicts", func(t *testing.T) {
 		f.changes.byID["c2"] = &domain.Change{ID: "c2", ProjectID: "p1", IssueID: "i1", Phase: "tasks", Status: "archived"}
-		_, err := f.svc.WriteArtifact(context.Background(), "alice", "c2", KindProposal, "x")
+		_, err := f.svc.WriteArtifact(context.Background(), "alice", "c2", KindProposal, "x", "")
 		appErr, ok := err.(*httpapi.AppError)
 		if !ok || appErr.Status != 409 {
 			t.Errorf("error = %v, want 409", err)
@@ -198,7 +208,7 @@ func TestWriteArtifact(t *testing.T) {
 	})
 
 	t.Run("non-member is forbidden", func(t *testing.T) {
-		_, err := f.svc.WriteArtifact(context.Background(), "eve", "c1", KindProposal, "x")
+		_, err := f.svc.WriteArtifact(context.Background(), "eve", "c1", KindProposal, "x", "")
 		appErr, ok := err.(*httpapi.AppError)
 		if !ok || appErr.Status != 403 {
 			t.Errorf("error = %v, want 403", err)

@@ -118,7 +118,7 @@ func TestWorkflowFlowEnsureChange(t *testing.T) {
 
 	t.Run("write artifact stores a versioned artifact", func(t *testing.T) {
 		c, _ := flow.EnsureChange(ctx, "agent-1", "i1")
-		a, err := flow.WriteArtifact(ctx, "agent-1", c, "proposal", "# Proposal")
+		a, err := flow.WriteArtifact(ctx, "agent-1", c, "proposal", "# Proposal", "")
 		if err != nil {
 			t.Fatalf("write artifact: %v", err)
 		}

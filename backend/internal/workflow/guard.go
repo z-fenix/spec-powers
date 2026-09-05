@@ -225,7 +225,7 @@ func (s *Service) AdvancePhase(ctx context.Context, userID, changeID string) (*d
 // SubmitVerifyReport stores a verify report as a versioned artifact. The
 // YAML must parse and carry result pass or fail; only a pass report
 // releases the archive gate.
-func (s *Service) SubmitVerifyReport(ctx context.Context, userID, changeID, content string) (*domain.Artifact, bool, error) {
+func (s *Service) SubmitVerifyReport(ctx context.Context, userID, changeID, content, runID string) (*domain.Artifact, bool, error) {
 	c, err := s.requireChangeRole(ctx, userID, changeID)
 	if err != nil {
 		return nil, false, err
@@ -242,6 +242,7 @@ func (s *Service) SubmitVerifyReport(ctx context.Context, userID, changeID, cont
 		Kind:      KindVerify,
 		Content:   content,
 		CreatedBy: userID,
+		RunID:     runID,
 	})
 	if err != nil {
 		return nil, false, httpapi.ErrInternal("save verify report failed")

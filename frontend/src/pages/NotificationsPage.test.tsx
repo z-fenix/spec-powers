@@ -113,4 +113,42 @@ describe('NotificationsPage', () => {
 
     expect(await screen.findByTestId('notifications-empty')).toBeInTheDocument()
   })
+
+  it('reloads through the unread filter tab', async () => {
+    const user = userEvent.setup()
+    mocked.listNotifications.mockResolvedValue({ notifications: [], unread: 0 })
+
+    renderPage()
+    await screen.findByTestId('notifications-page')
+    expect(mocked.listNotifications).toHaveBeenLastCalledWith(false)
+
+    await user.click(screen.getByTestId('tab-unread'))
+    await vi.waitFor(() => {
+      expect(mocked.listNotifications).toHaveBeenLastCalledWith(true)
+    })
+
+    await user.click(screen.getByTestId('tab-all'))
+    await vi.waitFor(() => {
+      expect(mocked.listNotifications).toHaveBeenLastCalledWith(false)
+    })
+  })
+
+  it('marks one notification read from its read button without navigating', async () => {
+    const user = userEvent.setup()
+    mocked.listNotifications
+      .mockResolvedValueOnce({ notifications: [makeNotification()], unread: 1 })
+      .mockResolvedValue({ notifications: [makeNotification({ read: true })], unread: 0 })
+    mocked.markNotificationRead.mockResolvedValueOnce(makeNotification({ read: true }))
+
+    renderPage()
+
+    await screen.findByTestId('notification-n1')
+    await user.click(screen.getByTestId('read-n1'))
+
+    expect(mocked.markNotificationRead).toHaveBeenCalledWith('n1')
+    await vi.waitFor(() => {
+      expect(mocked.listNotifications).toHaveBeenCalledTimes(2)
+    })
+    expect(screen.getByTestId('location')).toHaveTextContent('/notifications')
+  })
 })

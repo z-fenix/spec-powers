@@ -155,14 +155,16 @@ type ChangeHandoff struct {
 }
 
 // Artifact is one version of a markdown deliverable produced by a change.
-// Version is assigned per (change, kind), starting at 1.
+// Version is assigned per (change, kind), starting at 1. RunID is the agent
+// run that produced the artifact; empty for human or splitter writes.
 type Artifact struct {
 	ID        string
 	ChangeID  string
-	Kind      string // "proposal" | "specs" | "design" | "tasks"
+	Kind      string // "proposal" | "specs" | "design" | "tasks" | "verify"
 	Version   int
 	Content   string
 	CreatedBy string
+	RunID     string
 	CreatedAt time.Time
 }
 

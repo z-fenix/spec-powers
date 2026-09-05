@@ -341,7 +341,7 @@ func TestSubmitVerifyReport(t *testing.T) {
 
 	t.Run("pass report is stored and releases the gate", func(t *testing.T) {
 		a, passed, err := f.svc.SubmitVerifyReport(context.Background(), "bob", "c1",
-			"result: pass\nsummary: all checks green\n")
+			"result: pass\nsummary: all checks green\n", "")
 		if err != nil || !passed {
 			t.Fatalf("submit = %+v, passed %v, err %v", a, passed, err)
 		}
@@ -351,7 +351,7 @@ func TestSubmitVerifyReport(t *testing.T) {
 	})
 
 	t.Run("newer fail report flips the gate off", func(t *testing.T) {
-		_, passed, err := f.svc.SubmitVerifyReport(context.Background(), "bob", "c1", "result: fail\n")
+		_, passed, err := f.svc.SubmitVerifyReport(context.Background(), "bob", "c1", "result: fail\n", "")
 		if err != nil {
 			t.Fatalf("submit: %v", err)
 		}
@@ -368,7 +368,7 @@ func TestSubmitVerifyReport(t *testing.T) {
 	})
 
 	t.Run("malformed report is rejected", func(t *testing.T) {
-		_, _, err := f.svc.SubmitVerifyReport(context.Background(), "bob", "c1", "result: [broken")
+		_, _, err := f.svc.SubmitVerifyReport(context.Background(), "bob", "c1", "result: [broken", "")
 		if status := appErrStatus(t, err); status != http.StatusBadRequest {
 			t.Errorf("status = %d, want 400", status)
 		}
@@ -376,7 +376,7 @@ func TestSubmitVerifyReport(t *testing.T) {
 
 	t.Run("archived change rejects reports", func(t *testing.T) {
 		f.changes.byID["c1"].Status = "archived"
-		_, _, err := f.svc.SubmitVerifyReport(context.Background(), "bob", "c1", "result: pass\n")
+		_, _, err := f.svc.SubmitVerifyReport(context.Background(), "bob", "c1", "", "result: pass\n")
 		if status := appErrStatus(t, err); status != http.StatusConflict {
 			t.Errorf("status = %d, want 409", status)
 		}

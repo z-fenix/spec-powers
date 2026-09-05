@@ -51,13 +51,14 @@ type artifactDTO struct {
 	Version   int    `json:"version"`
 	Content   string `json:"content"`
 	CreatedBy string `json:"created_by"`
+	RunID     string `json:"run_id"`
 	CreatedAt string `json:"created_at"`
 }
 
 func toArtifactDTO(a *domain.Artifact) artifactDTO {
 	return artifactDTO{
 		ID: a.ID, ChangeID: a.ChangeID, Kind: a.Kind, Version: a.Version,
-		Content: a.Content, CreatedBy: a.CreatedBy,
+		Content: a.Content, CreatedBy: a.CreatedBy, RunID: a.RunID,
 		CreatedAt: a.CreatedAt.UTC().Format(timeFormat),
 	}
 }
@@ -228,6 +229,9 @@ func (h *Handler) listArtifactVersions(w http.ResponseWriter, r *http.Request) {
 
 type writeArtifactRequest struct {
 	Content string `json:"content"`
+	// RunID optionally records the producing agent run so the artifact's
+	// execution logs can be traced from the UI.
+	RunID string `json:"run_id"`
 }
 
 // writeArtifact stores a new version of one artifact kind; the manual path
@@ -238,7 +242,7 @@ func (h *Handler) writeArtifact(w http.ResponseWriter, r *http.Request) {
 		httpapi.Error(w, httpapi.ErrInvalid("body must be JSON with content"))
 		return
 	}
-	a, err := h.svc.WriteArtifact(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "changeID"), chi.URLParam(r, "kind"), req.Content)
+	a, err := h.svc.WriteArtifact(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "changeID"), chi.URLParam(r, "kind"), req.Content, req.RunID)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -291,6 +295,7 @@ func (h *Handler) advancePhase(w http.ResponseWriter, r *http.Request) {
 
 type submitVerifyRequest struct {
 	Content string `json:"content"`
+	RunID   string `json:"run_id"`
 }
 
 // submitVerify stores a verify report; only result: pass releases the
@@ -305,7 +310,7 @@ func (h *Handler) submitVerify(w http.ResponseWriter, r *http.Request) {
 		httpapi.Error(w, httpapi.ErrInvalid("content is required"))
 		return
 	}
-	a, passed, err := h.svc.SubmitVerifyReport(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "changeID"), req.Content)
+	a, passed, err := h.svc.SubmitVerifyReport(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "changeID"), req.Content, req.RunID)
 	if err != nil {
 		writeAppError(w, err)
 		return

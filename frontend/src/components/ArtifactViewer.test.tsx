@@ -25,6 +25,7 @@ function artifact(kind: string, version: number, content: string): Artifact {
     version,
     content,
     created_by: 'u1',
+    run_id: null,
     created_at: '2026-09-04T00:00:00Z',
   }
 }

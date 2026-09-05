@@ -894,7 +894,7 @@ func cmdArtifactWrite(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return e.fail(1, err)
 	}
-	a, err := c.WriteArtifact(changeID, kind, body)
+	a, err := c.WriteArtifact(changeID, kind, body, "")
 	if err != nil {
 		return e.fail(1, err)
 	}

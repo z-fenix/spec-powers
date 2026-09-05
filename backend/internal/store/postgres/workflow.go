@@ -122,12 +122,12 @@ type ArtifactStore struct {
 func NewArtifactStore(pool *pgxpool.Pool) *ArtifactStore { return &ArtifactStore{pool: pool} }
 
 const artifactColumns = `
-	id, change_id::text, kind, version, content, created_by::text, created_at`
+	id, change_id::text, kind, version, content, created_by::text, COALESCE(run_id::text, ''), created_at`
 
 func scanArtifact(row pgx.Row) (*domain.Artifact, error) {
 	a := &domain.Artifact{}
 	err := row.Scan(&a.ID, &a.ChangeID, &a.Kind, &a.Version, &a.Content,
-		&a.CreatedBy, &a.CreatedAt)
+		&a.CreatedBy, &a.RunID, &a.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, store.ErrNotFound
 	}
@@ -139,11 +139,11 @@ func scanArtifact(row pgx.Row) (*domain.Artifact, error) {
 
 func (s *ArtifactStore) CreateArtifact(ctx context.Context, a *domain.Artifact) (*domain.Artifact, error) {
 	return scanArtifact(s.pool.QueryRow(ctx, `
-		INSERT INTO artifacts (change_id, kind, version, content, created_by)
-		SELECT $1, $2, COALESCE(MAX(version), 0) + 1, $3, $4
+		INSERT INTO artifacts (change_id, kind, version, content, created_by, run_id)
+		SELECT $1, $2, COALESCE(MAX(version), 0) + 1, $3, $4, NULLIF($5, '')::uuid
 		FROM artifacts WHERE change_id = $1 AND kind = $2
 		RETURNING `+artifactColumns,
-		a.ChangeID, a.Kind, a.Content, a.CreatedBy))
+		a.ChangeID, a.Kind, a.Content, a.CreatedBy, a.RunID))
 }
 
 func (s *ArtifactStore) GetArtifact(ctx context.Context, changeID, kind string, version int) (*domain.Artifact, error) {
@@ -167,7 +167,7 @@ const artifactKindOrder = `array_position(ARRAY['proposal', 'specs', 'design', '
 // `a` for queries that join the latest-version subquery (bare `kind` would
 // be ambiguous).
 const qualifiedArtifactColumns = `
-	a.id, a.change_id::text, a.kind, a.version, a.content, a.created_by::text, a.created_at`
+	a.id, a.change_id::text, a.kind, a.version, a.content, a.created_by::text, COALESCE(a.run_id::text, ''), a.created_at`
 
 func (s *ArtifactStore) ListArtifacts(ctx context.Context, changeID string) ([]domain.Artifact, error) {
 	rows, err := s.pool.Query(ctx, `

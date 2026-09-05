@@ -16,9 +16,9 @@ import (
 type FlowDriver interface {
 	EnsureChange(ctx context.Context, userID, issueID string) (*domain.Change, error)
 	PhaseSkill(ctx context.Context, userID string, change *domain.Change) (*skill.Skill, error)
-	WriteArtifact(ctx context.Context, userID string, change *domain.Change, kind, content string) (*domain.Artifact, error)
+	WriteArtifact(ctx context.Context, userID string, change *domain.Change, kind, content, runID string) (*domain.Artifact, error)
 	AdvancePhase(ctx context.Context, userID string, change *domain.Change) (*domain.Change, error)
-	SubmitVerify(ctx context.Context, userID string, change *domain.Change, content string) (*domain.Artifact, error)
+	SubmitVerify(ctx context.Context, userID string, change *domain.Change, content, runID string) (*domain.Artifact, error)
 	Archive(ctx context.Context, userID string, change *domain.Change) (*domain.Change, error)
 }
 
@@ -54,8 +54,8 @@ func (w *WorkflowFlow) PhaseSkill(ctx context.Context, userID string, change *do
 	return w.svc.NextSkill(ctx, userID, change.ID)
 }
 
-func (w *WorkflowFlow) WriteArtifact(ctx context.Context, userID string, change *domain.Change, kind, content string) (*domain.Artifact, error) {
-	return w.svc.WriteArtifact(ctx, userID, change.ID, kind, content)
+func (w *WorkflowFlow) WriteArtifact(ctx context.Context, userID string, change *domain.Change, kind, content, runID string) (*domain.Artifact, error) {
+	return w.svc.WriteArtifact(ctx, userID, change.ID, kind, content, runID)
 }
 
 func (w *WorkflowFlow) AdvancePhase(ctx context.Context, userID string, change *domain.Change) (*domain.Change, error) {
@@ -63,8 +63,8 @@ func (w *WorkflowFlow) AdvancePhase(ctx context.Context, userID string, change *
 	return c, err
 }
 
-func (w *WorkflowFlow) SubmitVerify(ctx context.Context, userID string, change *domain.Change, content string) (*domain.Artifact, error) {
-	a, _, err := w.svc.SubmitVerifyReport(ctx, userID, change.ID, content)
+func (w *WorkflowFlow) SubmitVerify(ctx context.Context, userID string, change *domain.Change, content, runID string) (*domain.Artifact, error) {
+	a, _, err := w.svc.SubmitVerifyReport(ctx, userID, change.ID, content, runID)
 	return a, err
 }
 

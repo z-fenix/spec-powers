@@ -28,6 +28,7 @@ type fakeFlow struct {
 type writeCall struct {
 	kind    string
 	content string
+	runID   string
 }
 
 func (f *fakeFlow) EnsureChange(_ context.Context, userID, issueID string) (*domain.Change, error) {
@@ -45,8 +46,8 @@ func (f *fakeFlow) PhaseSkill(_ context.Context, _ string, _ *domain.Change) (*s
 	return f.skill, nil
 }
 
-func (f *fakeFlow) WriteArtifact(_ context.Context, _ string, _ *domain.Change, kind, content string) (*domain.Artifact, error) {
-	f.writes = append(f.writes, writeCall{kind: kind, content: content})
+func (f *fakeFlow) WriteArtifact(_ context.Context, _ string, _ *domain.Change, kind, content, runID string) (*domain.Artifact, error) {
+	f.writes = append(f.writes, writeCall{kind: kind, content: content, runID: runID})
 	return &domain.Artifact{ID: "art-1", ChangeID: f.change.ID, Kind: kind, Version: 1}, nil
 }
 
@@ -62,7 +63,7 @@ func (f *fakeFlow) AdvancePhase(_ context.Context, _ string, _ *domain.Change) (
 	return f.change, nil
 }
 
-func (f *fakeFlow) SubmitVerify(_ context.Context, _ string, _ *domain.Change, content string) (*domain.Artifact, error) {
+func (f *fakeFlow) SubmitVerify(_ context.Context, _ string, _ *domain.Change, content, runID string) (*domain.Artifact, error) {
 	f.verifyCalls = append(f.verifyCalls, content)
 	return &domain.Artifact{ID: "verify-1", Kind: "verify", Version: 1}, nil
 }
@@ -133,7 +134,7 @@ func TestExecutorFlowWriteArtifactTool(t *testing.T) {
 	if err := e.Execute(context.Background(), run, agent); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
-	if len(flow.writes) != 1 || flow.writes[0].kind != "proposal" || flow.writes[0].content != "# Proposal" {
+	if len(flow.writes) != 1 || flow.writes[0].kind != "proposal" || flow.writes[0].content != "# Proposal" || flow.writes[0].runID != "run-1" {
 		t.Fatalf("writes = %+v", flow.writes)
 	}
 	// The tool result flows back into the next turn's transcript.

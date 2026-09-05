@@ -16,7 +16,79 @@ vi.mock('../api/issues', async (importOriginal) => {
   }
 })
 
+vi.mock('../api/workflow', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/workflow')>()
+  return {
+    ...actual,
+    getChangeByIssue: vi.fn(),
+    listArtifacts: vi.fn(),
+  }
+})
+
+vi.mock('../api/runs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/runs')>()
+  return {
+    ...actual,
+    getRun: vi.fn(),
+  }
+})
+
+import { getChangeByIssue, listArtifacts } from '../api/workflow'
+import type { Change, Artifact } from '../api/workflow'
+import { getRun } from '../api/runs'
+import type { Run, RunLog } from '../api/runs'
+
 const mocked = vi.mocked(api)
+
+function makeChange(overrides: Partial<Change> = {}): Change {
+  return {
+    id: 'c1',
+    project_id: 'p1',
+    issue_id: 'a',
+    phase: 'proposal',
+    status: 'active',
+    created_by: 'u1',
+    created_at: '2026-09-05T00:00:00Z',
+    updated_at: '2026-09-05T00:00:00Z',
+    ...overrides,
+  }
+}
+
+function makeArtifact(overrides: Partial<Artifact> = {}): Artifact {
+  return {
+    id: 'art1',
+    change_id: 'c1',
+    kind: 'proposal',
+    version: 1,
+    content: '# 提案',
+    created_by: 'u1',
+    run_id: null,
+    created_at: '2026-09-05T00:00:00Z',
+    ...overrides,
+  }
+}
+
+function makeRun(overrides: Partial<Run> = {}): Run {
+  return {
+    id: 'r1',
+    agent_id: 'ag1',
+    issue_id: 'a',
+    trigger: 'assigned',
+    status: 'done',
+    error: '',
+    created_at: '2026-09-05T00:00:00Z',
+    started_at: '2026-09-05T00:00:01Z',
+    finished_at: '2026-09-05T00:01:00Z',
+    ...overrides,
+  }
+}
+
+function makeLogs(): RunLog[] {
+  return [
+    { seq: 1, kind: 'llm_request', content: '规划提案' },
+    { seq: 2, kind: 'llm_response', content: '已完成提案撰写' },
+  ]
+}
 
 function makeIssue(overrides: Partial<Issue>): Issue {
   return {
@@ -149,5 +221,37 @@ describe('BoardPage', () => {
     renderPage()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('加载失败')
+  })
+
+  it('lists workflow artifacts on a card with their run logs', async () => {
+    mocked.listIssues.mockResolvedValue([makeIssue({ id: 'a', title: 'card a' })])
+    vi.mocked(getChangeByIssue).mockResolvedValue(makeChange())
+    vi.mocked(listArtifacts).mockResolvedValue([
+      makeArtifact({ id: 'art1', run_id: 'r1' }),
+    ])
+    vi.mocked(getRun).mockResolvedValue({ run: makeRun(), logs: makeLogs() })
+    renderPage()
+
+    await userEvent.click(await screen.findByTestId('toggle-artifacts-a'))
+
+    const list = await screen.findByTestId('artifacts-a')
+    expect(within(list).getByText('提案')).toBeInTheDocument()
+    expect(vi.mocked(getChangeByIssue)).toHaveBeenCalledWith('a')
+
+    await userEvent.click(within(list).getByTestId('logs-art1'))
+
+    const logsList = await screen.findByTestId('logs-art1-list')
+    expect(within(logsList).getByText('已完成提案撰写')).toBeInTheDocument()
+    expect(vi.mocked(getRun)).toHaveBeenCalledWith('r1')
+  })
+
+  it('shows an empty state when the issue has no change', async () => {
+    mocked.listIssues.mockResolvedValue([makeIssue({ id: 'a', title: 'card a' })])
+    vi.mocked(getChangeByIssue).mockRejectedValue(new Error('not found'))
+    renderPage()
+
+    await userEvent.click(await screen.findByTestId('toggle-artifacts-a'))
+
+    expect(await screen.findByTestId('artifacts-empty-a')).toBeInTheDocument()
   })
 })

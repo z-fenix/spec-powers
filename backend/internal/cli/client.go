@@ -389,12 +389,14 @@ func (c *Client) NextSkill(changeID string) (*Skill, error) {
 }
 
 // WriteArtifact stores a new version of one artifact kind for the change.
-func (c *Client) WriteArtifact(changeID, kind, content string) (*Artifact, error) {
+// runID records the producing run for log tracing; empty for human writes.
+func (c *Client) WriteArtifact(changeID, kind, content, runID string) (*Artifact, error) {
 	var res struct {
 		Artifact Artifact `json:"artifact"`
 	}
 	err := c.do(http.MethodPost, "/changes/"+changeID+"/artifacts/"+kind, map[string]string{
 		"content": content,
+		"run_id":  runID,
 	}, &res)
 	if err != nil {
 		return nil, err
@@ -464,14 +466,16 @@ func (c *Client) SubmitVerify(changeID, content string) (string, bool, error) {
 }
 
 // SubmitVerifyReport stores a verify report and returns the created verify
-// artifact (used by the runtime flow driver).
-func (c *Client) SubmitVerifyReport(changeID, content string) (*Artifact, bool, error) {
+// artifact (used by the runtime flow driver). runID records the producing
+// run; empty for human writes.
+func (c *Client) SubmitVerifyReport(changeID, content, runID string) (*Artifact, bool, error) {
 	var res struct {
 		Artifact Artifact `json:"artifact"`
 		Passed   bool     `json:"passed"`
 	}
 	err := c.do(http.MethodPost, "/changes/"+changeID+"/verify", map[string]string{
 		"content": content,
+		"run_id":  runID,
 	}, &res)
 	if err != nil {
 		return nil, false, err

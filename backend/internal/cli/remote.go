@@ -161,8 +161,8 @@ func (f *remoteFlow) PhaseSkill(ctx context.Context, userID string, change *doma
 	}, nil
 }
 
-func (f *remoteFlow) WriteArtifact(ctx context.Context, userID string, change *domain.Change, kind, content string) (*domain.Artifact, error) {
-	a, err := f.c.WriteArtifact(change.ID, kind, content)
+func (f *remoteFlow) WriteArtifact(ctx context.Context, userID string, change *domain.Change, kind, content, runID string) (*domain.Artifact, error) {
+	a, err := f.c.WriteArtifact(change.ID, kind, content, runID)
 	if err != nil {
 		return nil, err
 	}
@@ -177,8 +177,8 @@ func (f *remoteFlow) AdvancePhase(ctx context.Context, userID string, change *do
 	return toDomainChange(c), nil
 }
 
-func (f *remoteFlow) SubmitVerify(ctx context.Context, userID string, change *domain.Change, content string) (*domain.Artifact, error) {
-	a, _, err := f.c.SubmitVerifyReport(change.ID, content)
+func (f *remoteFlow) SubmitVerify(ctx context.Context, userID string, change *domain.Change, content, runID string) (*domain.Artifact, error) {
+	a, _, err := f.c.SubmitVerifyReport(change.ID, content, runID)
 	if err != nil {
 		return nil, err
 	}

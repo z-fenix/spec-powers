@@ -20,7 +20,8 @@ func (s *Service) WithCreator(c issueCreator) *Service {
 // letting the agent-driven skill flow produce artifacts without the LLM
 // splitter. Writing the tasks kind parses the tasks JSON and creates the
 // sub-issues with task mappings, mirroring the splitter's tasks phase.
-func (s *Service) WriteArtifact(ctx context.Context, userID, changeID, kind, content string) (*domain.Artifact, error) {
+// runID records the producing run for log tracing; empty for human writes.
+func (s *Service) WriteArtifact(ctx context.Context, userID, changeID, kind, content, runID string) (*domain.Artifact, error) {
 	if !IsValidKind(kind) {
 		return nil, httpapi.ErrInvalid("unknown artifact kind: " + kind)
 	}
@@ -39,6 +40,7 @@ func (s *Service) WriteArtifact(ctx context.Context, userID, changeID, kind, con
 		Kind:      kind,
 		Content:   content,
 		CreatedBy: userID,
+		RunID:     runID,
 	})
 	if err != nil {
 		return nil, httpapi.ErrInternal("save artifact failed")

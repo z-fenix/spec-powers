@@ -147,6 +147,8 @@ describe('IssueDetailPage', () => {
 
     const panel = await screen.findByTestId('issue-usage')
     expect(within(panel).getByTestId('usage-calls')).toHaveTextContent('0')
+  })
+
   it('renders the change timeline', async () => {
     mocked.listIssueEvents.mockResolvedValue([
       {

@@ -54,9 +54,9 @@ func (s *Service) Notify(ctx context.Context, in NotifyInput) {
 }
 
 // List returns the user's notifications, newest first; unreadOnly narrows
-// to unread ones.
-func (s *Service) List(ctx context.Context, userID string, unreadOnly bool) ([]domain.Notification, error) {
-	return s.notifications.ListNotifications(ctx, userID, unreadOnly)
+// to unread ones and a non-empty kind narrows to that event source.
+func (s *Service) List(ctx context.Context, userID string, unreadOnly bool, kind string) ([]domain.Notification, error) {
+	return s.notifications.ListNotifications(ctx, userID, unreadOnly, kind)
 }
 
 func (s *Service) CountUnread(ctx context.Context, userID string) (int, error) {

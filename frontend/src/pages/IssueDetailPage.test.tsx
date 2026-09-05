@@ -42,6 +42,9 @@ vi.mock('../api/issues', async (importOriginal) => {
     listMetadata: vi.fn(),
     setMetadata: vi.fn(),
     deleteMetadata: vi.fn(),
+    listSubscribers: vi.fn(),
+    addSubscriber: vi.fn(),
+    removeSubscriber: vi.fn(),
   }
 })
 
@@ -108,6 +111,7 @@ beforeEach(() => {
   mocked.listComments.mockResolvedValue([])
   mocked.listAttachments.mockResolvedValue([])
   mocked.listMetadata.mockResolvedValue([])
+  mocked.listSubscribers.mockResolvedValue([])
   vi.mocked(propertiesApi.listPropertyDefinitions).mockResolvedValue([])
   vi.mocked(propertiesApi.listIssueProperties).mockResolvedValue([])
   mocked.listIssueEvents.mockResolvedValue([])
@@ -381,6 +385,39 @@ describe('IssueDetailPage', () => {
 
     await userEvent.click(screen.getByTestId('meta-delete-k'))
     expect(mocked.deleteMetadata).toHaveBeenCalledWith('p1', 'i1', 'k')
+  })
+
+  it('lists subscribers and can add and remove one', async () => {
+    const bob = { user_id: 'u2', display_name: 'Bob', email: 'bob@example.com' }
+    const carol = { user_id: 'u3', display_name: 'Carol', email: 'carol@example.com' }
+    mocked.listSubscribers.mockResolvedValueOnce([bob])
+    mocked.addSubscriber.mockResolvedValue([bob, carol])
+    mocked.removeSubscriber.mockResolvedValue(undefined)
+    mocked.listSubscribers.mockResolvedValueOnce([bob, carol])
+    renderPage()
+
+    const panel = await screen.findByTestId('subscribers')
+    expect(within(panel).getByTestId('subscriber-u2')).toBeInTheDocument()
+
+    await userEvent.type(within(panel).getByTestId('subscriber-email'), 'carol@example.com')
+    await userEvent.click(within(panel).getByTestId('subscriber-add'))
+
+    expect(mocked.addSubscriber).toHaveBeenCalledWith('p1', 'i1', 'carol@example.com')
+    expect(await within(panel).findByTestId('subscriber-u3')).toBeInTheDocument()
+
+    await userEvent.click(within(panel).getByTestId('subscriber-remove-u2'))
+    expect(mocked.removeSubscriber).toHaveBeenCalledWith('p1', 'i1', 'u2')
+  })
+
+  it('shows an error when adding a subscriber fails', async () => {
+    mocked.addSubscriber.mockRejectedValue(new Error('user not found'))
+    renderPage()
+
+    const panel = await screen.findByTestId('subscribers')
+    await userEvent.type(within(panel).getByTestId('subscriber-email'), 'ghost@example.com')
+    await userEvent.click(within(panel).getByTestId('subscriber-add'))
+
+    expect(await within(panel).findByRole('alert')).toHaveTextContent('user not found')
   })
 
   it('shows the error message when loading fails', async () => {

@@ -2,6 +2,7 @@ package issue
 
 import (
 	"context"
+	"log"
 	"slices"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"specpowers/backend/internal/domain"
 	"specpowers/backend/internal/httpapi"
+	"specpowers/backend/internal/notification"
 	"specpowers/backend/internal/store"
 )
 
@@ -22,10 +24,12 @@ type RunTrigger interface {
 }
 
 type Service struct {
-	issues   store.IssueStore
-	projects store.ProjectStore
-	users    store.UserStore
-	trigger  RunTrigger
+	issues      store.IssueStore
+	projects    store.ProjectStore
+	users       store.UserStore
+	trigger     RunTrigger
+	subscribers store.SubscriberStore
+	notifier    notification.Sink
 	// events records the issue timeline; nil disables event recording.
 	events store.IssueEventStore
 }
@@ -41,6 +45,18 @@ func (s *Service) WithRunTrigger(t RunTrigger) *Service {
 	return s
 }
 
+// WithSubscribers installs the subscriber store; new issues then subscribe
+// their creator by default.
+func (s *Service) WithSubscribers(sub store.SubscriberStore) *Service {
+	s.subscribers = sub
+	return s
+}
+
+// WithNotifier installs a notification sink; status transitions then notify
+// the issue's subscribers (except the actor).
+func (s *Service) WithNotifier(n notification.Sink) *Service {
+	s.notifier = n
+	return s
 // WithEventStore installs the timeline event store; issue creation, field
 // updates and status transitions then append events.
 func (s *Service) WithEventStore(e store.IssueEventStore) *Service {
@@ -196,6 +212,9 @@ func (s *Service) CreateIssue(ctx context.Context, userID, projectID string, in 
 	if err != nil {
 		return nil, httpapi.ErrInternal("create issue failed")
 	}
+	if s.subscribers != nil {
+		if err := s.subscribers.AddIssueSubscriber(ctx, created.ID, userID); err != nil {
+			log.Printf("issue: subscribe creator failed: %v", err)
 	if err := s.recordEvent(ctx, created.ID, userID, "created", "", created.Title); err != nil {
 		return nil, err
 	if s.trigger != nil && in.AssigneeID != "" {
@@ -427,7 +446,8 @@ func (s *Service) GetChildren(ctx context.Context, userID, issueID string) ([]do
 // TransitionStatus moves an issue through the kanban state machine. When the
 // issue is a child and reaches a terminal state while every sibling is also
 // terminal, a wakeup is recorded on the parent so its assignee can be woken
-// for acceptance (Multica-compatible behavior).
+// for acceptance (Multica-compatible behavior). Subscribers are notified
+// about the transition, except the actor.
 func (s *Service) TransitionStatus(ctx context.Context, userID, issueID, to string) (*domain.Issue, error) {
 	current, err := s.requireProjectIssue(ctx, userID, issueID)
 	if err != nil {
@@ -436,6 +456,7 @@ func (s *Service) TransitionStatus(ctx context.Context, userID, issueID, to stri
 	if _, err := Transition(current.Status, to); err != nil {
 		return nil, err
 	}
+	from := current.Status
 	oldStatus := current.Status
 	current.Status = to
 	saved, err := s.issues.UpdateIssue(ctx, current)
@@ -453,7 +474,32 @@ func (s *Service) TransitionStatus(ctx context.Context, userID, issueID, to stri
 			return nil, httpapi.ErrInternal("notify status change failed")
 		}
 	}
+	s.notifySubscribersStatusChanged(ctx, userID, saved, from, to)
 	return saved, nil
+}
+
+// notifySubscribersStatusChanged is best-effort: subscriber lookups and
+// delivery failures never fail the transition itself.
+func (s *Service) notifySubscribersStatusChanged(ctx context.Context, actorID string, i *domain.Issue, from, to string) {
+	if s.notifier == nil || s.subscribers == nil {
+		return
+	}
+	users, err := s.subscribers.ListIssueSubscribers(ctx, i.ID)
+	if err != nil {
+		log.Printf("issue: list subscribers failed: %v", err)
+		return
+	}
+	ids := make([]string, 0, len(users))
+	for _, u := range users {
+		ids = append(ids, u.ID)
+	}
+	notification.NotifyMany(ctx, s.notifier, ids, actorID, notification.NotifyInput{
+		Kind:      "status_changed",
+		Title:     "Status changed on: " + i.Title,
+		Body:      from + " → " + to,
+		IssueID:   i.ID,
+		ProjectID: i.ProjectID,
+	})
 }
 
 func (s *Service) wakeParentIfChildrenTerminal(ctx context.Context, child *domain.Issue) error {

@@ -86,6 +86,9 @@ func (h *Handler) Routes() http.Handler {
 	r.Get("/metadata", h.listMetadata)
 	r.Put("/metadata/{key}", h.setMetadata)
 	r.Delete("/metadata/{key}", h.deleteMetadata)
+	r.Get("/subscribers", h.listSubscribers)
+	r.Post("/subscribers", h.addSubscriber)
+	r.Delete("/subscribers/{userID}", h.removeSubscriber)
 	return r
 }
 
@@ -209,6 +212,55 @@ func (h *Handler) setMetadata(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) deleteMetadata(w http.ResponseWriter, r *http.Request) {
 	err := h.svc.DeleteMetadata(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "issueID"), chi.URLParam(r, "key"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type subscriberDTO struct {
+	UserID      string `json:"user_id"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+}
+
+func toSubscriberDTOs(users []domain.User) []subscriberDTO {
+	dtos := make([]subscriberDTO, 0, len(users))
+	for _, u := range users {
+		dtos = append(dtos, subscriberDTO{UserID: u.ID, DisplayName: u.DisplayName, Email: u.Email})
+	}
+	return dtos
+}
+
+func (h *Handler) listSubscribers(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.ListSubscribers(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "issueID"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	httpapi.JSON(w, http.StatusOK, map[string]any{"subscribers": toSubscriberDTOs(list)})
+}
+
+func (h *Handler) addSubscriber(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpapi.Error(w, httpapi.ErrInvalid("malformed JSON body"))
+		return
+	}
+	list, err := h.svc.AddSubscriber(r.Context(), auth.UserIDFrom(r.Context()), chi.URLParam(r, "issueID"), req.Email)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	httpapi.JSON(w, http.StatusCreated, map[string]any{"subscribers": toSubscriberDTOs(list)})
+}
+
+func (h *Handler) removeSubscriber(w http.ResponseWriter, r *http.Request) {
+	err := h.svc.RemoveSubscriber(r.Context(), auth.UserIDFrom(r.Context()),
+		chi.URLParam(r, "issueID"), chi.URLParam(r, "userID"))
 	if err != nil {
 		writeAppError(w, err)
 		return

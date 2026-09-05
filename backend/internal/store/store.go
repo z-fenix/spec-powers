@@ -105,6 +105,13 @@ type IssueMetadataStore interface {
 	DeleteIssueMetadata(ctx context.Context, issueID, key string) error
 }
 
+// SubscriberStore is the per-issue subscriber list. Add is idempotent;
+// Remove reports ErrNotFound for a user that is not subscribed. List returns
+// the subscribers' user rows, oldest subscription first.
+type SubscriberStore interface {
+	AddIssueSubscriber(ctx context.Context, issueID, userID string) error
+	RemoveIssueSubscriber(ctx context.Context, issueID, userID string) error
+	ListIssueSubscribers(ctx context.Context, issueID string) ([]domain.User, error)
 // PropertyStore covers project-level custom property definitions and the
 // per-issue values assigned to them. SetIssueProperty is an upsert on
 // (issue_id, property_id); deleting a definition cascades to its values.

@@ -18,6 +18,7 @@ function errorMessage(err: unknown, fallback: string): string {
 export function ProjectsPage() {
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [error, setError] = useState('')
+  const [setShowCreate] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
 
@@ -38,6 +39,7 @@ export function ProjectsPage() {
       .then(() => {
         setName('')
         setDescription('')
+        setShowCreate(false)
         load()
       })
       .catch((err) => setError(errorMessage(err, '创建失败')))
@@ -58,13 +60,43 @@ export function ProjectsPage() {
   )
 
   return (
-    <section>
-      <h2>项目</h2>
-      {error && (
-        <p role="alert" data-testid="projects-error">
-          {error}
-        </p>
-      )}
+    <div className="page" data-testid="projects-page">
+      <div className="page-header">
+        <span className="project-icon">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path
+              d="M1.75 4.5c0-.69.56-1.25 1.25-1.25h3l1.5 1.75h6c.69 0 1.25.56 1.25 1.25v5.25c0 .69-.56 1.25-1.25 1.25H3c-.69 0-1.25-.56-1.25-1.25V4.5Z"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+        <h1 className="page-title">
+          项目
+          {projects && <span className="page-count">{list.length}</span>}
+        </h1>
+        <div className="page-header-actions">
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            data-testid="create-project"
+            onClick={() => {
+              setError('')
+              setShowCreate(true)
+            }}
+          >
+            创建项目
+          </button>
+        </div>
+      </div>
+      <div className="page-body">
+        <div className="page-gutter">
+          {error && (
+            <p role="alert" data-testid="projects-error">
+              {error}
+            </p>
+          )}
 
       <form onSubmit={onCreate} className="inline-form">
         <input

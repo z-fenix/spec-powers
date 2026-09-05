@@ -11,6 +11,7 @@ import { getChangeByIssue, listArtifacts, type Artifact } from '../api/workflow'
 import { getRun, type RunLog } from '../api/runs'
 import { ApiError } from '../api/client'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
+import { StatusIcon } from '../components/StatusIcon'
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError || err instanceof Error ? err.message : fallback
@@ -42,7 +43,7 @@ function IssueCard({
   const [showArtifacts, setShowArtifacts] = useState(false)
   return (
     <div
-      className="issue-card"
+      className="board-card"
       data-testid={`card-${issue.id}`}
       draggable
       onDragStart={(e) => {
@@ -57,20 +58,27 @@ function IssueCard({
         if (dragId && dragId !== issue.id) onDropOnCard(dragId, issue.id)
       }}
     >
-      <Link to={`/projects/${projectId}/issues/${issue.id}`}>{issue.title}</Link>
-      {issue.stage > 0 && <span className="badge">S{issue.stage}</span>}
-      <select
-        aria-label="状态"
-        data-testid={`status-${issue.id}`}
-        value={issue.status}
-        onChange={(e) => onTransition(issue.id, e.target.value)}
-      >
-        {STATUSES.map((s) => (
-          <option key={s} value={s}>
-            {STATUS_LABELS[s]}
-          </option>
-        ))}
-      </select>
+      <div className="board-card-top">
+        <StatusIcon status={issue.status} />
+        {issue.stage > 0 && <span className="chip">S{issue.stage}</span>}
+      </div>
+      <p className="board-card-title">
+        <Link to={`/projects/${projectId}/issues/${issue.id}`}>{issue.title}</Link>
+      </p>
+      <div className="board-card-meta">
+        <select
+          aria-label="状态"
+          data-testid={`status-${issue.id}`}
+          value={issue.status}
+          onChange={(e) => onTransition(issue.id, e.target.value)}
+        >
+          {STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {STATUS_LABELS[s]}
+            </option>
+          ))}
+        </select>
+      </div>
       <button
         data-testid={`toggle-artifacts-${issue.id}`}
         onClick={() => setShowArtifacts((v) => !v)}
@@ -272,47 +280,98 @@ export function BoardPage() {
   const byStage = (stage: number) => visible.filter((i) => i.stage === stage)
 
   return (
-    <section data-testid="board">
-      <h2>Issue 看板</h2>
-      {error && (
-        <p role="alert" data-testid="board-error">
-          {error}
-        </p>
-      )}
-      <div className="board-toolbar">
-        <select
-          aria-label="状态筛选"
-          data-testid="filter-status"
-          value={statusFilter}
-          onChange={(e) => onFilter(e.target.value, stageFilter)}
-        >
-          <option value="">全部状态</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABELS[s]}
-            </option>
-          ))}
-        </select>
-        <input
-          aria-label="Stage 筛选"
-          data-testid="filter-stage"
-          type="number"
-          min={0}
-          placeholder="Stage"
-          value={stageFilter}
-          onChange={(e) => onFilter(statusFilter, e.target.value)}
-        />
-        <button data-testid="view-board" onClick={() => setView('board')}>
-          看板
-        </button>
-        <button data-testid="view-list" onClick={() => setView('list')}>
-          列表
-        </button>
-        <button data-testid="toggle-create" onClick={() => setShowCreate((v) => !v)}>
-          新建 Issue
-        </button>
+    <div className="page" data-testid="board">
+      <div className="page-header">
+        <h1 className="page-title">Issue 看板</h1>
+        {error && (
+          <p role="alert" data-testid="board-error" style={{ margin: 0, color: 'var(--destructive)', fontSize: 'var(--text-caption)' }}>
+            {error}
+          </p>
+        )}
+      </div>
+      <div className="toolbar">
+        <div className="toolbar-group">
+          <select
+            aria-label="状态筛选"
+            data-testid="filter-status"
+            value={statusFilter}
+            onChange={(e) => onFilter(e.target.value, stageFilter)}
+          >
+            <option value="">全部状态</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {STATUS_LABELS[s]}
+              </option>
+            ))}
+          </select>
+          <input
+            className="input"
+            style={{ width: 96 }}
+            aria-label="Stage 筛选"
+            data-testid="filter-stage"
+            type="number"
+            min={0}
+            placeholder="Stage"
+            value={stageFilter}
+            onChange={(e) => onFilter(statusFilter, e.target.value)}
+          />
+          <div className="toolbar-group" style={{ marginLeft: 'auto' }}>
+            <button
+              className={view === 'board' ? 'btn btn-outline btn-sm' : 'btn btn-ghost btn-sm'}
+              data-testid="view-board"
+              onClick={() => setView('board')}
+            >
+              看板
+            </button>
+            <button
+              className={view === 'list' ? 'btn btn-outline btn-sm' : 'btn btn-ghost btn-sm'}
+              data-testid="view-list"
+              onClick={() => setView('list')}
+            >
+              列表
+            </button>
+            <button className="btn btn-primary btn-sm" data-testid="toggle-create" onClick={() => setShowCreate((v) => !v)}>
+              新建 Issue
+            </button>
+          </div>
+        </div>
       </div>
 
+      <div className="page-body">
+        {issues === null ? (
+          <p className="page-gutter">加载中…</p>
+        ) : view === 'board' ? (
+          <div className="board">
+            {STATUSES.map((s) => (
+              <div key={s} className="board-col" data-status={s} data-testid={`column-${s}`}>
+                <div className="board-col-header">
+                  <StatusIcon status={s} />
+                  {STATUS_LABELS[s]}
+                  <span className="board-col-count">{byStatus(visible, s).length}</span>
+                </div>
+                <div className="board-col-cards">
+                  {byStatus(visible, s).map((i) => (
+                    <IssueCard key={i.id} issue={i} projectId={id} onTransition={onTransition} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="page-gutter">
+            {Array.from(new Set(visible.map((i) => i.stage)))
+              .sort((a, b) => a - b)
+              .map((stageNum) => (
+                <div key={stageNum} className="stage-group" data-testid={`stage-group-${stageNum}`}>
+                  <h3 className="stage-group-title">Stage {stageNum}</h3>
+                  {byStage(stageNum).map((i) => (
+                    <IssueCard key={i.id} issue={i} projectId={id} onTransition={onTransition} />
+                  ))}
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
       {showCreate && (
         <form onSubmit={onCreate} className="inline-form" data-testid="create-form">
           <input

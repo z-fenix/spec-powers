@@ -20,6 +20,7 @@ import {
 } from '../api/issues'
 import { ApiError } from '../api/client'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
+import { StatusIcon } from '../components/StatusIcon'
 import { WorkflowProgress } from '../components/WorkflowProgress'
 import { ArtifactViewer } from '../components/ArtifactViewer'
 import { renderMarkdown } from '../lib/markdown'
@@ -32,10 +33,12 @@ function SubtaskTree({
   projectId,
   parentId,
   reloadKey,
+  path = [],
 }: {
   projectId: string
   parentId: string
   reloadKey: number
+  path?: string[]
 }) {
   const [children, setChildren] = useState<Issue[] | null>(null)
 
@@ -54,17 +57,26 @@ function SubtaskTree({
   }, [projectId, parentId, reloadKey])
 
   if (children === null) return null
-  if (children.length === 0) return null
+  const visibleChildren = children.filter((c) => !path.includes(c.id))
+  if (visibleChildren.length === 0) return null
   return (
-    <ul className="subtask-list">
-      {children.map((c) => (
+    <div className="detail-section" data-testid="subtask-tree">
+      <h3>子任务</h3>
+      <ul className="subtask-list">
+      {visibleChildren.map((c) => (
         <li key={c.id} data-testid={`subtask-${c.id}`}>
           <Link to={`/projects/${projectId}/issues/${c.id}`}>{c.title}</Link>{' '}
           <span data-testid={`subtask-status-${c.id}`}>{STATUS_LABELS[c.status] ?? c.status}</span>
-          <SubtaskTree projectId={projectId} parentId={c.id} reloadKey={reloadKey} />
+          <SubtaskTree
+            projectId={projectId}
+            parentId={c.id}
+            reloadKey={reloadKey}
+            path={[...path, c.id]}
+          />
         </li>
       ))}
-    </ul>
+      </ul>
+    </div>
   )
 }
 
@@ -110,7 +122,7 @@ function CommentThread({
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
-      <button data-testid={`reply-submit-${comment.id}`} onClick={submit}>
+      <button className="btn btn-primary btn-sm" data-testid={`reply-submit-${comment.id}`} onClick={submit}>
         回复
       </button>
     </div>
@@ -159,7 +171,7 @@ function MetadataPanel({
         {entries.map((m) => (
           <li key={m.key} data-testid={`meta-row-${m.key}`}>
             <code>{m.key}</code> = <span data-testid={`meta-value-${m.key}`}>{m.value}</span>{' '}
-            <button data-testid={`meta-delete-${m.key}`} onClick={() => onDelete(m.key)}>
+            <button className="btn btn-ghost btn-sm" data-testid={`meta-delete-${m.key}`} onClick={() => onDelete(m.key)}>
               删除
             </button>
           </li>
@@ -177,7 +189,7 @@ function MetadataPanel({
         value={value}
         onChange={(e) => setValue(e.target.value)}
       />
-      <button data-testid="meta-set" onClick={onSet}>
+      <button className="btn btn-outline btn-sm" data-testid="meta-set" onClick={onSet}>
         设置
       </button>
     </div>
@@ -232,7 +244,7 @@ function AttachmentPanel({
         {attachments.map((a) => (
           <li key={a.id}>
             {a.file_name} <span className="badge">{a.content_type}</span>{' '}
-            <button data-testid={`download-${a.id}`} onClick={() => onDownload(a)}>
+            <button className="btn btn-outline btn-sm" data-testid={`download-${a.id}`} onClick={() => onDownload(a)}>
               下载
             </button>
           </li>
@@ -348,104 +360,148 @@ export function IssueDetailPage() {
   const repliesOf = (parentId: string) => comments.filter((c) => c.parent_id === parentId)
 
   return (
-    <section data-testid="issue-detail">
-      <h2>{issue.title}</h2>
-      {error && (
-        <p role="alert" data-testid="detail-error">
-          {error}
-        </p>
-      )}
-      <div className="issue-meta">
-        <span className="badge">S{issue.stage}</span>
-        <select
-          aria-label="状态"
-          data-testid="detail-status"
-          value={issue.status}
-          onChange={(e) => onTransition(e.target.value)}
-        >
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABELS[s]}
-            </option>
-          ))}
-        </select>
-        <span>
-          负责人: <span data-testid="assignee">{issue.assignee_id || '未指派'}</span>
-        </span>
-        {issue.due_date && (
-          <span>
-            截止: <span data-testid="due-date">{issue.due_date}</span>
-          </span>
-        )}
-        {!editing && (
-          <button data-testid="edit-issue" onClick={startEdit}>
-            编辑
-          </button>
-        )}
-      </div>
-
-      {editing ? (
-        <div className="edit-form">
-          <input
-            data-testid="edit-title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-          <textarea
-            data-testid="edit-description"
-            rows={6}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-          <button data-testid="save-issue" onClick={onSave}>
-            保存
-          </button>
+    <div className="page" data-testid="issue-detail">
+      <div className="page-header">
+        <nav className="breadcrumb">
+          <Link to={`/projects/${id}/board`}>看板</Link>
+          <span className="crumb-sep">›</span>
+          <span className="crumb-leaf">#{issueId.slice(0, 8)}</span>
+        </nav>
+        <div className="page-header-actions">
+          {!editing && (
+            <button className="btn btn-ghost btn-sm" data-testid="edit-issue" onClick={startEdit}>
+              编辑
+            </button>
+          )}
         </div>
-      ) : (
-        <p className="issue-description">{issue.description}</p>
-      )}
-
-      <div data-testid="subtask-tree">
-        <h3>子任务</h3>
-        <SubtaskTree projectId={id} parentId={issueId} reloadKey={1} />
       </div>
+      <div className="detail-layout">
+        <div className="detail-main">
+          <div className="detail-main-inner">
+            {error && (
+              <p role="alert" data-testid="detail-error" style={{ color: 'var(--destructive)', marginTop: 0 }}>
+                {error}
+              </p>
+            )}
+            <h1 className="detail-title">{issue.title}</h1>
+            {editing ? (
+              <div className="edit-form" style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <input
+                  className="input"
+                  data-testid="edit-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+                <textarea
+                  className="input"
+                  data-testid="edit-description"
+                  rows={6}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-primary btn-sm" data-testid="save-issue" onClick={onSave}>
+                    保存
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="detail-desc">{issue.description}</p>
+            )}
 
-      <WorkflowProgress issueId={issueId} />
-      <ArtifactViewer issueId={issueId} />
+            <SubtaskTree projectId={id} parentId={issueId} reloadKey={1} />
 
-      <h3>评论</h3>
-      {roots.map((c) => (
-        <CommentThread
-          key={c.id}
-          comment={c}
-          replies={repliesOf(c.id)}
-          onReply={onReply}
-        />
-      ))}
-      <form onSubmit={onSubmitComment} className="inline-form">
-        <input
-          data-testid="new-comment"
-          placeholder="写评论…"
-          value={newComment}
-          onChange={(e) => setNewComment(e.target.value)}
-        />
-        <button type="submit" data-testid="submit-comment">
-          评论
-        </button>
-      </form>
+            <div className="detail-section">
+              <WorkflowProgress issueId={issueId} />
+              <ArtifactViewer issueId={issueId} />
+            </div>
 
-      <AttachmentPanel
-        projectId={id}
-        issueId={issueId}
-        attachments={attachments}
-        onChanged={loadAttachments}
-      />
-      <MetadataPanel
-        projectId={id}
-        issueId={issueId}
-        entries={metadata}
-        onChanged={loadMetadata}
-      />
-    </section>
+            <div className="detail-section">
+              <h3>评论</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {roots.map((c) => (
+                  <CommentThread
+                    key={c.id}
+                    comment={c}
+                    replies={repliesOf(c.id)}
+                    onReply={onReply}
+                  />
+                ))}
+              </div>
+              <form onSubmit={onSubmitComment} className="inline-form">
+                <input
+                  className="input"
+                  style={{ flex: 1, minWidth: 200 }}
+                  data-testid="new-comment"
+                  placeholder="写评论…"
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                />
+                <button type="submit" className="btn btn-primary btn-sm" data-testid="submit-comment">
+                  评论
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <aside className="detail-aside">
+          <div>
+            <p className="section-title">属性</p>
+            <div className="prop-row">
+              <span className="prop-label">状态</span>
+              <span className="prop-value">
+                <StatusIcon status={issue.status} />
+                <select
+                  aria-label="状态"
+                  data-testid="detail-status"
+                  value={issue.status}
+                  onChange={(e) => onTransition(e.target.value)}
+                >
+                  {STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            </div>
+            <div className="prop-row">
+              <span className="prop-label">Stage</span>
+              <span className="prop-value">
+                <span className="chip">S{issue.stage}</span>
+              </span>
+            </div>
+            <div className="prop-row">
+              <span className="prop-label">负责人</span>
+              <span className="prop-value">
+                <span data-testid="assignee">{issue.assignee_id || '未指派'}</span>
+              </span>
+            </div>
+            {issue.due_date && (
+              <div className="prop-row">
+                <span className="prop-label">截止</span>
+                <span className="prop-value">
+                  <span data-testid="due-date">{issue.due_date}</span>
+                </span>
+              </div>
+            )}
+          </div>
+
+          <AttachmentPanel
+            projectId={id}
+            issueId={issueId}
+            attachments={attachments}
+            onChanged={loadAttachments}
+          />
+          <MetadataPanel
+            projectId={id}
+            issueId={issueId}
+            entries={metadata}
+            onChanged={loadMetadata}
+          />
+        </aside>
+      </div>
+    </div>
   )
 }

@@ -33,12 +33,16 @@ export function LoginPage() {
 
   return (
     <div className="login-page">
-      <form className="login-card" onSubmit={onSubmit}>
-        <h1>{mode === 'login' ? '登录' : '注册'}</h1>
+      <form className="login-card card" onSubmit={onSubmit}>
+        <div className="login-brand">
+          <span className="workspace-avatar">SP</span>
+        </div>
+        <h1 className="login-title">{mode === 'login' ? '登录' : '注册'}</h1>
         {mode === 'register' && (
           <label>
             显示名
             <input
+              className="input"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               data-testid="display-name"
@@ -49,6 +53,7 @@ export function LoginPage() {
         <label>
           邮箱
           <input
+            className="input"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -59,6 +64,7 @@ export function LoginPage() {
         <label>
           密码
           <input
+            className="input"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -71,7 +77,13 @@ export function LoginPage() {
             {error}
           </p>
         )}
-        <button type="submit" disabled={busy} data-testid="submit">
+        <button
+          type="submit"
+          disabled={busy}
+          data-testid="submit"
+          className="btn btn-primary"
+          style={{ width: '100%', height: 36 }}
+        >
           {busy ? '提交中…' : mode === 'login' ? '登录' : '注册'}
         </button>
         <button

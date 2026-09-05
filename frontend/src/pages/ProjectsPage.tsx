@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch, ApiError } from '../api/client'
+import { Modal } from '../components/Modal'
 
 export interface Project {
   id: string
@@ -18,7 +19,7 @@ function errorMessage(err: unknown, fallback: string): string {
 export function ProjectsPage() {
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [error, setError] = useState('')
-  const [setShowCreate] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
 
@@ -74,7 +75,7 @@ export function ProjectsPage() {
         </span>
         <h1 className="page-title">
           项目
-          {projects && <span className="page-count">{list.length}</span>}
+          {projects && <span className="page-count">{projects.length}</span>}
         </h1>
         <div className="page-header-actions">
           <button
@@ -98,41 +99,60 @@ export function ProjectsPage() {
             </p>
           )}
 
-      <form onSubmit={onCreate} className="inline-form">
-        <input
-          data-testid="project-name"
-          placeholder="项目名称"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-        />
-        <input
-          data-testid="project-description"
-          placeholder="描述（可选）"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-        />
-        <button type="submit" data-testid="create-project">
-          创建项目
-        </button>
-      </form>
+          {projects && projects.length === 0 && <p>还没有项目，先创建一个。</p>}
 
-      {projects && projects.length === 0 && <p>还没有项目，先创建一个。</p>}
-
-      <ul className="project-list">
-        {sorted.map((p) => (
-          <li key={p.id} className={p.archived ? 'project-item archived' : 'project-item'}>
-            <div className="project-item-main">
-              <Link to={`/projects/${p.id}`}>{p.name}</Link>
-              {p.archived && <span className="badge">已归档</span>}
-              {p.description && <p className="project-desc">{p.description}</p>}
+          <ul className="project-list">
+            {sorted.map((p) => (
+              <li key={p.id} className={p.archived ? 'project-item archived' : 'project-item'}>
+                <div className="project-item-main">
+                  <Link to={`/projects/${p.id}`}>{p.name}</Link>
+                  {p.archived && <span className="badge">已归档</span>}
+                  {p.description && <p className="project-desc">{p.description}</p>}
+                </div>
+                <button data-testid={`archive-${p.id}`} onClick={() => onArchive(p, !p.archived)}>
+                  {p.archived ? '恢复' : '归档'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+      {showCreate && (
+        <Modal title="新建项目" onClose={() => setShowCreate(false)}>
+          <form onSubmit={onCreate}>
+            <label>
+              名称
+              <input
+                className="input"
+                data-testid="project-name"
+                placeholder="项目名称"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                autoFocus
+              />
+            </label>
+            <label>
+              描述
+              <input
+                className="input"
+                data-testid="project-description"
+                placeholder="描述（可选）"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-outline" onClick={() => setShowCreate(false)}>
+                取消
+              </button>
+              <button type="submit" className="btn btn-primary" data-testid="confirm-create-project">
+                创建
+              </button>
             </div>
-            <button data-testid={`archive-${p.id}`} onClick={() => onArchive(p, !p.archived)}>
-              {p.archived ? '恢复' : '归档'}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
+          </form>
+        </Modal>
+      )}
+    </div>
   )
 }

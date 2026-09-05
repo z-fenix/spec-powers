@@ -343,7 +343,18 @@ export function BoardPage() {
         ) : view === 'board' ? (
           <div className="board">
             {STATUSES.map((s) => (
-              <div key={s} className="board-col" data-status={s} data-testid={`column-${s}`}>
+              <div
+                key={s}
+                className="board-col"
+                data-status={s}
+                data-testid={`column-${s}`}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  const dragId = e.dataTransfer.getData('text/plain') || dragIssueId
+                  if (dragId) onDropInColumn(dragId, s, null)
+                }}
+              >
                 <div className="board-col-header">
                   <StatusIcon status={s} />
                   {STATUS_LABELS[s]}
@@ -351,7 +362,14 @@ export function BoardPage() {
                 </div>
                 <div className="board-col-cards">
                   {byStatus(visible, s).map((i) => (
-                    <IssueCard key={i.id} issue={i} projectId={id} onTransition={onTransition} />
+                    <IssueCard
+                      key={i.id}
+                      issue={i}
+                      projectId={id}
+                      onTransition={onTransition}
+                      onDragStart={setDragIssueId}
+                      onDropOnCard={onDropOnCard}
+                    />
                   ))}
                 </div>
               </div>
@@ -365,7 +383,14 @@ export function BoardPage() {
                 <div key={stageNum} className="stage-group" data-testid={`stage-group-${stageNum}`}>
                   <h3 className="stage-group-title">Stage {stageNum}</h3>
                   {byStage(stageNum).map((i) => (
-                    <IssueCard key={i.id} issue={i} projectId={id} onTransition={onTransition} />
+                    <IssueCard
+                      key={i.id}
+                      issue={i}
+                      projectId={id}
+                      onTransition={onTransition}
+                      onDragStart={setDragIssueId}
+                      onDropOnCard={onDropOnCard}
+                    />
                   ))}
                 </div>
               ))}
@@ -400,61 +425,7 @@ export function BoardPage() {
           </button>
         </form>
       )}
-
-      {issues === null ? (
-        <p>加载中…</p>
-      ) : view === 'board' ? (
-        <div className="board-columns">
-          {STATUSES.map((s) => (
-            <div
-              key={s}
-              className="board-column"
-              data-testid={`column-${s}`}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault()
-                const dragId = e.dataTransfer.getData('text/plain') || dragIssueId
-                if (dragId) onDropInColumn(dragId, s, null)
-              }}
-            >
-              <h3>
-                {STATUS_LABELS[s]} <span className="count">{byStatus(visible, s).length}</span>
-              </h3>
-              {byStatus(visible, s).map((i) => (
-                <IssueCard
-                  key={i.id}
-                  issue={i}
-                  projectId={id}
-                  onTransition={onTransition}
-                  onDragStart={setDragIssueId}
-                  onDropOnCard={onDropOnCard}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="stage-groups">
-          {Array.from(new Set(visible.map((i) => i.stage)))
-            .sort((a, b) => a - b)
-            .map((stageNum) => (
-              <div key={stageNum} data-testid={`stage-group-${stageNum}`}>
-                <h3>Stage {stageNum}</h3>
-                {byStage(stageNum).map((i) => (
-                  <IssueCard
-                    key={i.id}
-                    issue={i}
-                    projectId={id}
-                    onTransition={onTransition}
-                    onDragStart={setDragIssueId}
-                    onDropOnCard={onDropOnCard}
-                  />
-                ))}
-              </div>
-            ))}
-        </div>
-      )}
-    </section>
+    </div>
   )
 }
 

@@ -3,8 +3,10 @@ import { AuthProvider } from './auth/AuthContext'
 import { Layout } from './components/Layout'
 import { RequireAuth } from './components/RequireAuth'
 import { AgentsPage } from './pages/AgentsPage'
+import { AutopilotsPage } from './pages/AutopilotsPage'
 import { BoardPage } from './pages/BoardPage'
 import { IssueDetailPage } from './pages/IssueDetailPage'
+import { WebhooksPage } from './pages/WebhooksPage'
 import { LoginPage } from './pages/LoginPage'
 import { MemberProfilePage } from './pages/MemberProfilePage'
 import { NotificationsPage } from './pages/NotificationsPage'
@@ -24,6 +26,8 @@ export default function App() {
             <Route path="/projects/:id/issues/:issueId" element={<IssueDetailPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/agents" element={<AgentsPage />} />
+            <Route path="/webhooks" element={<WebhooksPage />} />
+            <Route path="/autopilots" element={<AutopilotsPage />} />
             <Route path="/members/:userId" element={<MemberProfilePage />} />
           </Route>
         </Route>

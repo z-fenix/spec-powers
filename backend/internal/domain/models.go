@@ -198,8 +198,8 @@ type Agent struct {
 }
 
 // Run is one execution of an agent on an issue. Trigger is what started it:
-// "assigned", "status_changed", "wakeup" or "manual". Status follows the
-// lifecycle queued → running → done | failed.
+// "assigned", "status_changed", "wakeup", "manual", "mention" or
+// "autopilot". Status follows the lifecycle queued → running → done | failed.
 type Run struct {
 	ID         string
 	AgentID    string
@@ -250,4 +250,41 @@ type Notification struct {
 	ProjectID string
 	ReadAt    *time.Time
 	CreatedAt time.Time
+}
+
+// Webhook is an inbound webhook endpoint: external systems POST events to
+// /api/v1/hooks/{id} and authenticate with an HMAC-SHA256 signature of the
+// body computed over Secret. Enabled webhooks fire the autopilots bound to
+// them (trigger "webhook").
+type Webhook struct {
+	ID        string
+	Name      string
+	Secret    string
+	Enabled   bool
+	CreatedAt time.Time
+}
+
+// Autopilot automates an action. TriggerType is "cron" (CronSpec is a
+// five-field cron expression), "webhook" (fires when WebhookID's endpoint
+// receives a valid event) or "manual". ActionType is "create_issue" (creates
+// an issue in ProjectID with IssueTitle/IssueDescription) or "run_agent"
+// (enqueues a run of AgentID on IssueID). NextRunAt tracks the next cron
+// fire time and is maintained by the scheduler.
+type Autopilot struct {
+	ID               string
+	Name             string
+	TriggerType      string
+	CronSpec         string
+	WebhookID        string
+	ActionType       string
+	AgentID          string
+	ProjectID        string
+	IssueID          string
+	IssueTitle       string
+	IssueDescription string
+	CreatedBy        string
+	Enabled          bool
+	LastFiredAt      *time.Time
+	NextRunAt        *time.Time
+	CreatedAt        time.Time
 }

@@ -230,8 +230,44 @@ describe('IssueDetailPage', () => {
     expect(mocked.updateIssue).toHaveBeenCalledWith('p1', 'i1', {
       title: 'parent issue',
       description: 'do the thing appended',
+      priority: 'none',
+      labels: [],
+      due_date: '2026-09-10',
     })
     expect(await screen.findByText('do the thing appended')).toBeInTheDocument()
+  })
+
+  it('shows priority, labels and overdue due date', async () => {
+    mocked.getIssue.mockResolvedValue({
+      ...issue,
+      priority: 'high',
+      labels: ['backend'],
+      due_date: '2020-01-01',
+    })
+    renderPage()
+
+    await screen.findByTestId('issue-detail')
+    expect(screen.getByTestId('detail-priority')).toHaveTextContent('高')
+    expect(screen.getByTestId('detail-labels')).toHaveTextContent('backend')
+    expect(screen.getByTestId('due-date').closest('.due-date')).toHaveClass('overdue')
+  })
+
+  it('edits priority, labels and due date', async () => {
+    mocked.updateIssue.mockResolvedValue({ ...issue, priority: 'high', labels: ['a', 'b'] })
+    renderPage()
+
+    await userEvent.click(await screen.findByTestId('edit-issue'))
+    await userEvent.selectOptions(screen.getByTestId('edit-priority'), 'high')
+    await userEvent.type(screen.getByTestId('edit-labels'), 'a, b')
+    await userEvent.click(screen.getByTestId('save-issue'))
+
+    expect(mocked.updateIssue).toHaveBeenCalledWith('p1', 'i1', {
+      title: 'parent issue',
+      description: 'do the thing',
+      priority: 'high',
+      labels: ['a', 'b'],
+      due_date: '2026-09-10',
+    })
   })
 
   it('lists comments as threads and replies to one', async () => {

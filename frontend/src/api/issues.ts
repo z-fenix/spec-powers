@@ -80,6 +80,7 @@ export interface IssueFilter {
   stage?: number
   parent?: string
   query?: string
+  label?: string
 }
 
 export interface IssueEvent {
@@ -104,6 +105,7 @@ function withQuery(path: string, filter?: IssueFilter): string {
   if (filter.stage !== undefined) params.set('stage', String(filter.stage))
   if (filter.parent) params.set('parent', filter.parent)
   if (filter.query) params.set('q', filter.query)
+  if (filter.label) params.set('label', filter.label)
   const qs = params.toString()
   return qs ? `${path}?${qs}` : path
 }

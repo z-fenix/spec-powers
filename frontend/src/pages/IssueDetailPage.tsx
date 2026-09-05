@@ -27,7 +27,14 @@ import {
 import { listAgents } from '../api/agents'
 import { listIssuePullRequests, type PullRequest } from '../api/pullrequests'
 import { ApiError } from '../api/client'
-import { STATUSES, STATUS_LABELS } from '../lib/status'
+import {
+  PRIORITIES,
+  PRIORITY_LABELS,
+  STATUSES,
+  STATUS_LABELS,
+  isOverdue,
+  parseLabels,
+} from '../lib/status'
 import { StatusIcon } from '../components/StatusIcon'
 import {
   decodeMultiSelect,
@@ -635,6 +642,9 @@ export function IssueDetailPage() {
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [priority, setPriority] = useState('none')
+  const [labels, setLabels] = useState('')
+  const [dueDate, setDueDate] = useState('')
   const [newComment, setNewComment] = useState('')
   const [agents, setAgents] = useState<MentionCandidate[]>([])
 
@@ -719,12 +729,21 @@ export function IssueDetailPage() {
     if (!issue) return
     setTitle(issue.title)
     setDescription(issue.description)
+    setPriority(issue.priority || 'none')
+    setLabels((issue.labels ?? []).join(', '))
+    setDueDate(issue.due_date ? issue.due_date.slice(0, 10) : '')
     setEditing(true)
   }
 
   const onSave = () => {
     setError('')
-    updateIssue(id, issueId, { title, description })
+    updateIssue(id, issueId, {
+      title,
+      description,
+      priority,
+      labels: parseLabels(labels),
+      due_date: dueDate,
+    })
       .then((updated) => {
         setIssue(updated)
         setEditing(false)
@@ -806,6 +825,34 @@ export function IssueDetailPage() {
                   rows={6}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
+                />
+                <select
+                  className="input"
+                  aria-label="优先级"
+                  data-testid="edit-priority"
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value)}
+                >
+                  {PRIORITIES.map((p) => (
+                    <option key={p} value={p}>
+                      {PRIORITY_LABELS[p]}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className="input"
+                  data-testid="edit-labels"
+                  placeholder="标签（逗号分隔）"
+                  value={labels}
+                  onChange={(e) => setLabels(e.target.value)}
+                />
+                <input
+                  className="input"
+                  data-testid="edit-due"
+                  type="date"
+                  aria-label="截止日"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
                 />
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="btn btn-primary btn-sm" data-testid="save-issue" onClick={onSave}>
@@ -889,6 +936,26 @@ export function IssueDetailPage() {
               </span>
             </div>
             <div className="prop-row">
+              <span className="prop-label">优先级</span>
+              <span className="prop-value">
+                <span className="badge" data-testid="detail-priority">
+                  {PRIORITY_LABELS[issue.priority] ?? issue.priority}
+                </span>
+              </span>
+            </div>
+            {issue.labels.length > 0 && (
+              <div className="prop-row">
+                <span className="prop-label">标签</span>
+                <span className="prop-value" data-testid="detail-labels">
+                  {issue.labels.map((l) => (
+                    <span key={l} className="badge label">
+                      {l}
+                    </span>
+                  ))}
+                </span>
+              </div>
+            )}
+            <div className="prop-row">
               <span className="prop-label">负责人</span>
               <span className="prop-value">
                 <span data-testid="assignee">{issue.assignee_id || '未指派'}</span>
@@ -897,8 +964,13 @@ export function IssueDetailPage() {
             {issue.due_date && (
               <div className="prop-row">
                 <span className="prop-label">截止</span>
-                <span className="prop-value">
-                  <span data-testid="due-date">{issue.due_date}</span>
+                <span
+                  className={
+                    isOverdue(issue.due_date, issue.status) ? 'prop-value due-date overdue' : 'prop-value due-date'
+                  }
+                >
+                  <span data-testid="due-date">{issue.due_date.slice(0, 10)}</span>
+                  {isOverdue(issue.due_date, issue.status) && '（已逾期）'}
                 </span>
               </div>
             )}

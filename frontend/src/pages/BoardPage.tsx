@@ -11,7 +11,17 @@ import { getChangeByIssue, listArtifacts, type Artifact } from '../api/workflow'
 import { getRun, type RunLog } from '../api/runs'
 import { ApiError } from '../api/client'
 import { listStatuses, upsertStatus, deleteStatus } from '../api/statuses'
-import { DEFAULT_DIRECTORY, STATUS_CATEGORIES, CATEGORY_LABELS, statusLabel, type StatusEntry } from '../lib/status'
+import {
+  DEFAULT_DIRECTORY,
+  STATUS_CATEGORIES,
+  CATEGORY_LABELS,
+  statusLabel,
+  PRIORITIES,
+  PRIORITY_LABELS,
+  isOverdue,
+  parseLabels,
+  type StatusEntry,
+} from '../lib/status'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
 import {
   decodeMultiSelect,
@@ -42,6 +52,7 @@ interface IssueCardProps {
   onTransition: (issueId: string, status: string) => void
   onDragStart: (issueId: string) => void
   onDropOnCard: (dragId: string, targetIssueId: string) => void
+  onPriorityChange: (issueId: string, priority: string) => void
 }
 
 function IssueCard({
@@ -51,9 +62,11 @@ function IssueCard({
   onTransition,
   onDragStart,
   onDropOnCard,
+  onPriorityChange,
 }: IssueCardProps) {
   const [showArtifacts, setShowArtifacts] = useState(false)
   const category = directory.find((s) => s.name === issue.status)?.category
+  const overdue = isOverdue(issue.due_date, issue.status)
   return (
     <div
       className="board-card"
@@ -74,10 +87,37 @@ function IssueCard({
       <div className="board-card-top">
         <StatusIcon status={issue.status} category={category} />
         {issue.stage > 0 && <span className="chip">S{issue.stage}</span>}
+        <select
+          aria-label="优先级"
+          data-testid={`priority-${issue.id}`}
+          value={issue.priority}
+          onChange={(e) => onPriorityChange(issue.id, e.target.value)}
+        >
+          {PRIORITIES.map((p) => (
+            <option key={p} value={p}>
+              {PRIORITY_LABELS[p]}
+            </option>
+          ))}
+        </select>
       </div>
       <p className="board-card-title">
         <Link to={`/projects/${projectId}/issues/${issue.id}`}>{issue.title}</Link>
       </p>
+      {issue.labels.length > 0 && (
+        <span className="card-labels" data-testid={`labels-${issue.id}`}>
+          {issue.labels.map((l) => (
+            <span key={l} className="badge label">
+              {l}
+            </span>
+          ))}
+        </span>
+      )}
+      {issue.due_date && (
+        <span className={overdue ? 'due-date overdue' : 'due-date'} data-testid={`due-${issue.id}`}>
+          截止: {issue.due_date.slice(0, 10)}
+          {overdue && '（已逾期）'}
+        </span>
+      )}
       <div className="board-card-meta">
         <select
           aria-label="状态"
@@ -200,6 +240,7 @@ export function BoardPage() {
   const [propertyFilter, setPropertyFilter] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchInput, setSearchInput] = useState('')
+  const [labelFilter, setLabelFilter] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [showDirectory, setShowDirectory] = useState(false)
   const [newStatusName, setNewStatusName] = useState('')
@@ -207,10 +248,13 @@ export function BoardPage() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [stage, setStage] = useState('')
+  const [priority, setPriority] = useState('none')
+  const [labels, setLabels] = useState('')
+  const [dueDate, setDueDate] = useState('')
   const [dragIssueId, setDragIssueId] = useState('')
 
   const load = useCallback(
-    (filter?: { status?: string; stage?: number; query?: string }) => {
+    (filter?: { status?: string; stage?: number; query?: string; label?: string }) => {
       return listIssues(id, filter)
         .then(setIssues)
         .catch((err) => setError(errorMessage(err, '加载失败')))
@@ -253,13 +297,15 @@ export function BoardPage() {
     }
   }, [id])
 
-  const onFilter = (status: string, stage: string) => {
+  const onFilter = (status: string, stage: string, label: string) => {
     setStatusFilter(status)
     setStageFilter(stage)
-    const filter: { status?: string; stage?: number; query?: string } = {}
+    setLabelFilter(label)
+    const filter: { status?: string; stage?: number; query?: string; label?: string } = {}
     if (status) filter.status = status
     if (stage) filter.stage = Number(stage)
     if (searchQuery) filter.query = searchQuery
+    if (label) filter.label = label
     load(filter)
   }
 
@@ -267,9 +313,10 @@ export function BoardPage() {
     e.preventDefault()
     const q = searchInput.trim()
     setSearchQuery(q)
-    const filter: { status?: string; stage?: number; query?: string } = {}
+    const filter: { status?: string; stage?: number; query?: string; label?: string } = {}
     if (statusFilter) filter.status = statusFilter
     if (stageFilter) filter.stage = Number(stageFilter)
+    if (labelFilter) filter.label = labelFilter
     if (q) filter.query = q
     load(filter)
   }
@@ -279,6 +326,13 @@ export function BoardPage() {
     transitionIssue(id, issueId, status)
       .then(() => load())
       .catch((err) => setError(errorMessage(err, '状态流转失败')))
+  }
+
+  const onPriorityChange = (issueId: string, prio: string) => {
+    setError('')
+    updateIssue(id, issueId, { priority: prio })
+      .then(() => load())
+      .catch((err) => setError(errorMessage(err, '优先级更新失败')))
   }
 
   // Dropping a card in a column either flows its status (cross-column) or
@@ -328,11 +382,17 @@ export function BoardPage() {
       title,
       description,
       stage: stage ? Number(stage) : undefined,
+      priority,
+      labels: labels ? parseLabels(labels) : undefined,
+      due_date: dueDate || undefined,
     })
       .then(() => {
         setTitle('')
         setDescription('')
         setStage('')
+        setPriority('none')
+        setLabels('')
+        setDueDate('')
         setShowCreate(false)
         return load()
       })
@@ -369,78 +429,11 @@ export function BoardPage() {
       <div className="board-toolbar">
         <div className="toolbar-group">
           <select
-          aria-label="状态筛选"
-          data-testid="filter-status"
-          value={statusFilter}
-          onChange={(e) => onFilter(e.target.value, stageFilter)}
-        >
-          <option value="">全部状态</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABELS[s]}
-            </option>
-          ))}
-        </select>
-        <input
             className="input"
-            style={{ width: 96 }}
-          aria-label="Stage 筛选"
-          data-testid="filter-stage"
-          type="number"
-          min={0}
-          placeholder="Stage"
-          value={stageFilter}
-          onChange={(e) => onFilter(statusFilter, e.target.value)}
-        />
-        {selectDefs.length > 0 && (
-          <select
-              className="input"
-              aria-label="属性筛选"
-            data-testid="filter-property"
-            value={propertyFilter}
-            onChange={(e) => setPropertyFilter(e.target.value)}
-          >
-            <option value="">全部属性</option>
-            {selectDefs.map((d) => (
-              <optgroup key={d.id} label={d.name}>
-                {d.options.map((o) => (
-                  <option key={o} value={`${d.id}|${o}`}>
-                    {`${d.name}: ${o}`}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        )}
-        <button data-testid="view-board" onClick={() => setView('board')}>
-          看板
-        </button>
-        <button data-testid="view-list" onClick={() => setView('list')}>
-          列表
-        </button>
-        <button data-testid="toggle-create" onClick={() => setShowCreate((v) => !v)}>
-          新建 Issue
-        </button>
-            <form onSubmit={onSearch}  className="inline-form" data-testid="board-search">
-                <input
-                    className="input"
-                    aria-label="搜索 Issue"
-                    data-testid="search-issues"
-                    type="search"
-                    placeholder="搜索标题/描述/评论"
-                    value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
-                />
-                <button type="submit" className="btn btn-outline btn-sm" data-testid="search-submit">
-                    搜索
-                </button>
-            </form>
-        <div className="toolbar-group">
-          <select
             aria-label="状态筛选"
             data-testid="filter-status"
             value={statusFilter}
-            onChange={(e) => onFilter(e.target.value, stageFilter)}
+            onChange={(e) => onFilter(e.target.value, stageFilter, labelFilter)}
           >
             <option value="">全部状态</option>
             {STATUSES.map((s) => (
@@ -458,33 +451,74 @@ export function BoardPage() {
             min={0}
             placeholder="Stage"
             value={stageFilter}
-            onChange={(e) => onFilter(statusFilter, e.target.value)}
+            onChange={(e) => onFilter(statusFilter, e.target.value, labelFilter)}
           />
-            <button
-              className={view === 'board' ? 'btn btn-outline btn-sm' : 'btn btn-ghost btn-sm'}
-              data-testid="view-board"
-              onClick={() => setView('board')}
+          <input
+            className="input"
+            aria-label="标签筛选"
+            data-testid="filter-label"
+            placeholder="标签"
+            value={labelFilter}
+            onChange={(e) => onFilter(statusFilter, stageFilter, e.target.value)}
+          />
+          {selectDefs.length > 0 && (
+            <select
+              className="input"
+              aria-label="属性筛选"
+              data-testid="filter-property"
+              value={propertyFilter}
+              onChange={(e) => setPropertyFilter(e.target.value)}
             >
-              看板
+              <option value="">全部属性</option>
+              {selectDefs.map((d) => (
+                <optgroup key={d.id} label={d.name}>
+                  {d.options.map((o) => (
+                    <option key={o} value={`${d.id}|${o}`}>
+                      {`${d.name}: ${o}`}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          )}
+          <button
+            className={view === 'board' ? 'btn btn-outline btn-sm' : 'btn btn-ghost btn-sm'}
+            data-testid="view-board"
+            onClick={() => setView('board')}
+          >
+            看板
+          </button>
+          <button
+            className={view === 'list' ? 'btn btn-outline btn-sm' : 'btn btn-ghost btn-sm'}
+            data-testid="view-list"
+            onClick={() => setView('list')}
+          >
+            列表
+          </button>
+          <button
+            className="btn btn-outline btn-sm"
+            data-testid="toggle-statuses"
+            onClick={() => { setError(''); setShowDirectory(true) }}
+          >
+            状态目录
+          </button>
+          <button className="btn btn-primary btn-sm" data-testid="toggle-create" onClick={() => { setError(''); setShowCreate(true) }}>
+            新建 Issue
+          </button>
+          <form onSubmit={onSearch} className="inline-form" data-testid="board-search">
+            <input
+              className="input"
+              aria-label="搜索 Issue"
+              data-testid="search-issues"
+              type="search"
+              placeholder="搜索标题/描述/评论"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
+            <button type="submit" className="btn btn-outline btn-sm" data-testid="search-submit">
+              搜索
             </button>
-            <button
-              className={view === 'list' ? 'btn btn-outline btn-sm' : 'btn btn-ghost btn-sm'}
-              data-testid="view-list"
-              onClick={() => setView('list')}
-            >
-              列表
-            </button>
-            <button
-              className="btn btn-outline btn-sm"
-              data-testid="toggle-statuses"
-              onClick={() => { setError(''); setShowDirectory(true) }}
-            >
-              状态目录
-            </button>
-            <button className="btn btn-primary btn-sm" data-testid="toggle-create" onClick={() => { setError(''); setShowCreate(true) }}>
-              新建 Issue
-            </button>
-          </div>
+          </form>
         </div>
       </div>
 
@@ -523,6 +557,7 @@ export function BoardPage() {
                       onTransition={onTransition}
                       onDragStart={setDragIssueId}
                       onDropOnCard={onDropOnCard}
+                      onPriorityChange={onPriorityChange}
                     />
                   ))}
                 </div>
@@ -545,6 +580,7 @@ export function BoardPage() {
                       onTransition={onTransition}
                       onDragStart={setDragIssueId}
                       onDropOnCard={onDropOnCard}
+                      onPriorityChange={onPriorityChange}
                     />
                   ))}
                 </div>
@@ -588,6 +624,42 @@ export function BoardPage() {
                 placeholder="Stage"
                 value={stage}
                 onChange={(e) => setStage(e.target.value)}
+              />
+            </label>
+            <label>
+              优先级
+              <select
+                className="input"
+                data-testid="create-priority"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+              >
+                {PRIORITIES.map((p) => (
+                  <option key={p} value={p}>
+                    {PRIORITY_LABELS[p]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              标签
+              <input
+                className="input"
+                data-testid="create-labels"
+                placeholder="标签（逗号分隔）"
+                value={labels}
+                onChange={(e) => setLabels(e.target.value)}
+              />
+            </label>
+            <label>
+              截止日
+              <input
+                className="input"
+                data-testid="create-due"
+                type="date"
+                aria-label="截止日"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
               />
             </label>
             {error && (

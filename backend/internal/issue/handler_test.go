@@ -280,6 +280,29 @@ func TestIssueHandlerListFilters(t *testing.T) {
 		}
 	})
 
+	t.Run("label filter", func(t *testing.T) {
+		mk := func(title string, labels []string) issueDTO {
+			t.Helper()
+			w := f.do(t, http.MethodPost, "/p1/issues", tok, map[string]any{"title": title, "labels": labels})
+			var body struct {
+				Issue issueDTO `json:"issue"`
+			}
+			_ = json.Unmarshal(w.Body.Bytes(), &body)
+			return body.Issue
+		}
+		tagged := mk("tagged", []string{"backend"})
+		mk("untagged", nil)
+
+		w := f.do(t, http.MethodGet, "/p1/issues?label=backend", tok, nil)
+		var body struct {
+			Issues []issueDTO `json:"issues"`
+		}
+		_ = json.Unmarshal(w.Body.Bytes(), &body)
+		if len(body.Issues) != 1 || body.Issues[0].ID != tagged.ID {
+			t.Errorf("issues = %+v", body.Issues)
+		}
+	})
+
 	t.Run("bad stage filter is 400", func(t *testing.T) {
 		w := f.do(t, http.MethodGet, "/p1/issues?stage=abc", tok, nil)
 		if w.Code != http.StatusBadRequest {

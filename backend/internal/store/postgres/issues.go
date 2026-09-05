@@ -176,6 +176,10 @@ func (s *IssueStore) ListIssues(ctx context.Context, projectID string, filter st
 			SELECT 1 FROM issue_comments c
 			WHERE c.issue_id = i.id AND c.content ILIKE %s))`, pat, pat, pat)
 	}
+	if filter.Label != "" {
+		args = append(args, filter.Label)
+		where += fmt.Sprintf(" AND i.labels @> ARRAY[$%d]::text[]", len(args))
+	}
 	rows, err := s.pool.Query(ctx, issueSelect+`
 		WHERE `+where+`
 		ORDER BY i.stage, i.position, i.created_at`, args...)

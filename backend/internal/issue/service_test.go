@@ -2,6 +2,7 @@ package issue
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -106,6 +107,9 @@ func (f *fakeIssues) ListIssues(_ context.Context, projectID string, filter stor
 			continue
 		}
 		if filter.Query != "" && !fakeIssueMatches(i, f.comments[i.ID], filter.Query) {
+			continue
+		}
+		if filter.Label != "" && !slices.Contains(i.Labels, filter.Label) {
 			continue
 		}
 		out = append(out, *i)

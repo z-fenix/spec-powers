@@ -120,12 +120,13 @@ type ProjectStore interface {
 // IssueFilter narrows ListIssues. ParentID nil means "no filter"; a pointer
 // to "" selects root issues only. Empty Status means all statuses; nil Stage
 // means all stages. Non-empty Query does a case-insensitive keyword match on
-// title, description and comment content.
+// title, description and comment content; empty Label means all labels.
 type IssueFilter struct {
 	ParentID *string
 	Status   string
 	Stage    *int
 	Query    string
+	Label    string
 }
 
 type IssueStore interface {

@@ -186,8 +186,8 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 // parseListFilter reads list query params: status, stage, parent ("root"
-// selects root issues only) and the q search keyword. Unknown values are
-// silently ignored except stage, which must be numeric.
+// selects root issues only), the q search keyword and label. Unknown values
+// are silently ignored except stage, which must be numeric.
 func parseListFilter(r *http.Request) (store.IssueFilter, error) {
 	var filter store.IssueFilter
 	q := r.URL.Query()
@@ -210,6 +210,9 @@ func parseListFilter(r *http.Request) (store.IssueFilter, error) {
 	}
 	if s := q.Get("q"); s != "" {
 		filter.Query = s
+	}
+	if s := q.Get("label"); s != "" {
+		filter.Label = s
 	}
 	return filter, nil
 }

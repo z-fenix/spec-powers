@@ -52,11 +52,13 @@ type ProjectStore interface {
 
 // IssueFilter narrows ListIssues. ParentID nil means "no filter"; a pointer
 // to "" selects root issues only. Empty Status means all statuses; nil Stage
-// means all stages.
+// means all stages. Non-empty Query does a case-insensitive keyword match on
+// title, description and comment content.
 type IssueFilter struct {
 	ParentID *string
 	Status   string
 	Stage    *int
+	Query    string
 }
 
 type IssueStore interface {
@@ -72,6 +74,13 @@ type IssueStore interface {
 	// terminal state; repeats for the same pair are idempotent.
 	CreateIssueWakeup(ctx context.Context, issueID, childIssueID string) error
 	ListIssueWakeups(ctx context.Context, issueID string) ([]domain.IssueWakeup, error)
+}
+
+// IssueEventStore records and lists an issue's timeline events. Events are
+// append-only; ListIssueEvents returns them oldest first.
+type IssueEventStore interface {
+	CreateIssueEvent(ctx context.Context, e *domain.IssueEvent) (*domain.IssueEvent, error)
+	ListIssueEvents(ctx context.Context, issueID string) ([]domain.IssueEvent, error)
 }
 
 type CommentStore interface {
@@ -94,6 +103,21 @@ type IssueMetadataStore interface {
 	SetIssueMetadata(ctx context.Context, m *domain.IssueMetadata) (*domain.IssueMetadata, error)
 	ListIssueMetadata(ctx context.Context, issueID string) ([]domain.IssueMetadata, error)
 	DeleteIssueMetadata(ctx context.Context, issueID, key string) error
+}
+
+// PropertyStore covers project-level custom property definitions and the
+// per-issue values assigned to them. SetIssueProperty is an upsert on
+// (issue_id, property_id); deleting a definition cascades to its values.
+type PropertyStore interface {
+	CreatePropertyDefinition(ctx context.Context, d *domain.PropertyDefinition) (*domain.PropertyDefinition, error)
+	GetPropertyDefinition(ctx context.Context, id string) (*domain.PropertyDefinition, error)
+	ListPropertyDefinitions(ctx context.Context, projectID string) ([]domain.PropertyDefinition, error)
+	UpdatePropertyDefinition(ctx context.Context, d *domain.PropertyDefinition) (*domain.PropertyDefinition, error)
+	DeletePropertyDefinition(ctx context.Context, id string) error
+	SetIssueProperty(ctx context.Context, v *domain.IssuePropertyValue) (*domain.IssuePropertyValue, error)
+	ListIssueProperties(ctx context.Context, issueID string) ([]domain.IssuePropertyValue, error)
+	ListIssuePropertiesForProject(ctx context.Context, projectID string) ([]domain.IssuePropertyValue, error)
+	DeleteIssueProperty(ctx context.Context, issueID, propertyID string) error
 }
 
 type AgentStore interface {
@@ -183,7 +207,9 @@ type TaskMappingStore interface {
 type NotificationStore interface {
 	CreateNotification(ctx context.Context, n *domain.Notification) (*domain.Notification, error)
 	// ListNotifications returns the user's notifications, newest first.
-	ListNotifications(ctx context.Context, userID string, unreadOnly bool) ([]domain.Notification, error)
+	// A non-empty kind narrows the list to that event source; empty means
+	// every kind.
+	ListNotifications(ctx context.Context, userID string, unreadOnly bool, kind string) ([]domain.Notification, error)
 	// CountUnreadNotifications returns how many of the user's notifications
 	// are still unread.
 	CountUnreadNotifications(ctx context.Context, userID string) (int, error)

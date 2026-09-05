@@ -23,6 +23,7 @@ import (
 	"specpowers/backend/internal/llm"
 	"specpowers/backend/internal/notification"
 	"specpowers/backend/internal/project"
+	"specpowers/backend/internal/property"
 	"specpowers/backend/internal/skill"
 	"specpowers/backend/internal/store/postgres"
 	"specpowers/backend/internal/workflow"
@@ -92,22 +93,25 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	comments := postgres.NewCommentStore(pool)
 	attachments := postgres.NewAttachmentStore(pool)
 	metadata := postgres.NewIssueMetadataStore(pool)
+	properties := postgres.NewPropertyStore(pool)
 	changes := postgres.NewChangeStore(pool)
 	artifacts := postgres.NewArtifactStore(pool)
 	taskMappings := postgres.NewTaskMappingStore(pool)
 	agents := postgres.NewAgentStore(pool)
 	runs := postgres.NewRunStore(pool)
 	runLogs := postgres.NewRunLogStore(pool)
+	issueEvents := postgres.NewIssueEventStore(pool)
 
 	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
 	notificationStore := postgres.NewNotificationStore(pool)
 	notificationSvc := notification.NewService(notificationStore)
 	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
-	issueService := issue.NewService(issues, projects, users)
+	issueService := issue.NewService(issues, projects, users).WithEventStore(issueEvents)
 	// Mention auto-claim: comments mentioning an agent enqueue its run.
 	mentionTrigger := agent.NewMentionTrigger(agents, runs)
 	collabSvc := collab.NewService(issues, projects, comments, attachments, metadata, cfg.AttachmentDir).
 		WithNotifier(notificationSvc).
+		WithUserDirectory(users).
 		WithCommentObserver(func(ctx context.Context, c *domain.IssueComment) {
 			if err := mentionTrigger.OnComment(ctx, c.IssueID, c.AuthorID, c.Content); err != nil {
 				log.Printf("agent mention trigger: %v", err)
@@ -115,12 +119,15 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 		})
 	issueHandler := issue.NewHandler(issueService, tokens).WithCollab(
 		collab.NewHandler(collabSvc, tokens).Routes(),
+	).WithProperties(
+		property.NewHandler(property.NewService(properties, projects, issues), tokens).ValueRoutes(),
 	)
+	propertyHandler := property.NewHandler(property.NewService(properties, projects, issues), tokens)
 	projectHandler := project.NewHandler(
 		project.NewService(projects, users, members, workspaces),
 		tokens,
 		issueHandler.Routes(),
-	)
+	).WithProperties(propertyHandler.DefinitionRoutes())
 	workflowService := workflow.NewService(changes, artifacts, taskMappings, issues, projects)
 	workflowService = workflowService.WithWaker(issues)
 	runTrigger := agent.NewTrigger(agents, runs)
@@ -191,6 +198,10 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	agentHandler := agent.NewHandler(agentSvc, queue, runs, runLogs, issues, tokens, runtimeTokens)
 	workerCtx, stopWorker := context.WithCancel(context.Background())
 	go queue.Loop(workerCtx)
+	// Due-date notifications: periodic scan writing "due" notices for human
+	// assignees when deadlines approach or pass; shares the worker lifetime.
+	dueScanner := notification.NewDueScanner(issues, agents, notificationStore, notificationSvc)
+	go dueScanner.Loop(workerCtx, time.Minute)
 	runtimeHandler := agent.NewRuntimeHandler(agent.RuntimeHandlerDeps{
 		Agents:      agents,
 		Runs:        runs,

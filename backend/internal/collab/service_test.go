@@ -608,3 +608,71 @@ func TestAddCommentSkipsNotifyingCommentAuthor(t *testing.T) {
 		t.Fatalf("unexpected notifications: %+v", rec.calls)
 	}
 }
+
+// ---- @-mention notifications for human users ----
+
+type fakeUserDirectory struct {
+	users []domain.User
+}
+
+func (f *fakeUserDirectory) ListUsers(context.Context) ([]domain.User, error) {
+	return f.users, nil
+}
+
+func TestAddCommentNotifiesMentionedUsers(t *testing.T) {
+	f, rec := notifierFixture(t, "assignee1")
+	f.svc.WithUserDirectory(&fakeUserDirectory{users: []domain.User{
+		{ID: "u-bob", DisplayName: "Bob"},
+		{ID: "u-carol", DisplayName: "Carol"},
+	}})
+
+	if _, err := f.svc.AddComment(context.Background(), "alice", "i1", "", "ping @Bob and @Carol"); err != nil {
+		t.Fatalf("AddComment: %v", err)
+	}
+	// One "comment" notice for the assignee plus one "mention" per named user.
+	if len(rec.calls) != 3 {
+		t.Fatalf("got %d notifications, want 3: %+v", len(rec.calls), rec.calls)
+	}
+	mentions := rec.calls[1:]
+	for _, in := range mentions {
+		if in.Kind != "mention" || in.IssueID != "i1" {
+			t.Fatalf("notification = %+v", in)
+		}
+		if in.Title != "You were mentioned in: target issue" {
+			t.Fatalf("mention title: %q", in.Title)
+		}
+	}
+	if mentions[0].UserID != "u-bob" || mentions[1].UserID != "u-carol" {
+		t.Fatalf("mention targets: %+v", mentions)
+	}
+}
+
+func TestAddCommentMentionSkipsAuthorAndAssignee(t *testing.T) {
+	// alice is both the comment author and (via i1's assignee) already
+	// covered by the "comment" notification — neither must be re-notified.
+	f, rec := notifierFixture(t, "alice")
+	f.svc.WithUserDirectory(&fakeUserDirectory{users: []domain.User{
+		{ID: "alice", DisplayName: "Alice"},
+	}})
+
+	if _, err := f.svc.AddComment(context.Background(), "alice", "i1", "", "note to self: @Alice"); err != nil {
+		t.Fatalf("AddComment: %v", err)
+	}
+	if len(rec.calls) != 0 {
+		t.Fatalf("unexpected notifications: %+v", rec.calls)
+	}
+}
+
+func TestAddCommentMentionIgnoresPartialMatches(t *testing.T) {
+	f, rec := notifierFixture(t, "")
+	f.svc.WithUserDirectory(&fakeUserDirectory{users: []domain.User{
+		{ID: "u-bob", DisplayName: "Bob"},
+	}})
+
+	if _, err := f.svc.AddComment(context.Background(), "alice", "i1", "", "@Bobby tables"); err != nil {
+		t.Fatalf("AddComment: %v", err)
+	}
+	if len(rec.calls) != 0 {
+		t.Fatalf("partial mention must not notify: %+v", rec.calls)
+	}
+}

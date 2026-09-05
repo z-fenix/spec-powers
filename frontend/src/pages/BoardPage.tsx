@@ -11,7 +11,15 @@ import { getChangeByIssue, listArtifacts, type Artifact } from '../api/workflow'
 import { getRun, type RunLog } from '../api/runs'
 import { ApiError } from '../api/client'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
+import {
+  decodeMultiSelect,
+  listProjectIssueProperties,
+  listPropertyDefinitions,
+  type IssuePropertyValue,
+  type PropertyDefinition,
+} from '../api/properties'
 import { StatusIcon } from '../components/StatusIcon'
+import { Modal } from '../components/Modal'
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError || err instanceof Error ? err.message : fallback
@@ -181,6 +189,11 @@ export function BoardPage() {
   const [view, setView] = useState<'board' | 'list'>('board')
   const [statusFilter, setStatusFilter] = useState('')
   const [stageFilter, setStageFilter] = useState('')
+  const [propertyDefs, setPropertyDefs] = useState<PropertyDefinition[]>([])
+  const [propertyValues, setPropertyValues] = useState<IssuePropertyValue[]>([])
+  const [propertyFilter, setPropertyFilter] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchInput, setSearchInput] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -188,7 +201,7 @@ export function BoardPage() {
   const [dragIssueId, setDragIssueId] = useState('')
 
   const load = useCallback(
-    (filter?: { status?: string; stage?: number }) => {
+    (filter?: { status?: string; stage?: number; query?: string }) => {
       return listIssues(id, filter)
         .then(setIssues)
         .catch((err) => setError(errorMessage(err, '加载失败')))
@@ -200,14 +213,38 @@ export function BoardPage() {
     setIssues(null)
     setError('')
     load()
-  }, [load])
+    listPropertyDefinitions(id)
+      .then((defs) => {
+        setPropertyDefs(defs)
+        if (defs.some((d) => d.type === 'select')) {
+          return listProjectIssueProperties(id).then(setPropertyValues)
+        }
+        return undefined
+      })
+      .catch(() => {
+        setPropertyDefs([])
+        setPropertyValues([])
+      })
+  }, [load, id])
 
   const onFilter = (status: string, stage: string) => {
     setStatusFilter(status)
     setStageFilter(stage)
-    const filter: { status?: string; stage?: number } = {}
+    const filter: { status?: string; stage?: number; query?: string } = {}
     if (status) filter.status = status
     if (stage) filter.stage = Number(stage)
+    if (searchQuery) filter.query = searchQuery
+    load(filter)
+  }
+
+  const onSearch = (e: FormEvent) => {
+    e.preventDefault()
+    const q = searchInput.trim()
+    setSearchQuery(q)
+    const filter: { status?: string; stage?: number; query?: string } = {}
+    if (statusFilter) filter.status = statusFilter
+    if (stageFilter) filter.stage = Number(stageFilter)
+    if (q) filter.query = q
     load(filter)
   }
 
@@ -276,14 +313,86 @@ export function BoardPage() {
       .catch((err) => setError(errorMessage(err, '创建失败')))
   }
 
-  const visible = issues ?? []
+  const allIssues = issues ?? []
+  const selectDefs = propertyDefs.filter((d) => d.type === 'select')
+  const visible = (() => {
+    if (!propertyFilter) return allIssues
+    const idx = propertyFilter.indexOf('|')
+    const propId = propertyFilter.slice(0, idx)
+    const option = propertyFilter.slice(idx + 1)
+    const byIssue = new Map(propertyValues.map((v) => [v.issue_id, v]))
+    return allIssues.filter((i) => {
+      const v = byIssue.get(i.id)
+      if (!v || v.property_id !== propId) return false
+      if (v.value.startsWith('[')) return decodeMultiSelect(v.value).includes(option)
+      return v.value === option
+    })
+  })()
   const byStage = (stage: number) => visible.filter((i) => i.stage === stage)
 
   return (
+    <section data-testid="board">
+      <h2>Issue 看板</h2>
+      {error && (
+        <p role="alert" data-testid="board-error">
+          {error}
+        </p>
+      )}
+      <div className="board-toolbar">
+        <select
+          aria-label="状态筛选"
+          data-testid="filter-status"
+          value={statusFilter}
+          onChange={(e) => onFilter(e.target.value, stageFilter)}
+        >
+          <option value="">全部状态</option>
+          {STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {STATUS_LABELS[s]}
+            </option>
+          ))}
+        </select>
+        <input
+          aria-label="Stage 筛选"
+          data-testid="filter-stage"
+          type="number"
+          min={0}
+          placeholder="Stage"
+          value={stageFilter}
+          onChange={(e) => onFilter(statusFilter, e.target.value)}
+        />
+        {selectDefs.length > 0 && (
+          <select
+            aria-label="属性筛选"
+            data-testid="filter-property"
+            value={propertyFilter}
+            onChange={(e) => setPropertyFilter(e.target.value)}
+          >
+            <option value="">全部属性</option>
+            {selectDefs.map((d) => (
+              <optgroup key={d.id} label={d.name}>
+                {d.options.map((o) => (
+                  <option key={o} value={`${d.id}|${o}`}>
+                    {`${d.name}: ${o}`}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        )}
+        <button data-testid="view-board" onClick={() => setView('board')}>
+          看板
+        </button>
+        <button data-testid="view-list" onClick={() => setView('list')}>
+          列表
+        </button>
+        <button data-testid="toggle-create" onClick={() => setShowCreate((v) => !v)}>
+          新建 Issue
+        </button>
     <div className="page" data-testid="board">
       <div className="page-header">
         <h1 className="page-title">Issue 看板</h1>
-        {error && (
+        {error && !showCreate && (
           <p role="alert" data-testid="board-error" style={{ margin: 0, color: 'var(--destructive)', fontSize: 'var(--text-caption)' }}>
             {error}
           </p>
@@ -330,7 +439,7 @@ export function BoardPage() {
             >
               列表
             </button>
-            <button className="btn btn-primary btn-sm" data-testid="toggle-create" onClick={() => setShowCreate((v) => !v)}>
+            <button className="btn btn-primary btn-sm" data-testid="toggle-create" onClick={() => { setError(''); setShowCreate(true) }}>
               新建 Issue
             </button>
           </div>
@@ -397,33 +506,59 @@ export function BoardPage() {
           </div>
         )}
       </div>
+
       {showCreate && (
-        <form onSubmit={onCreate} className="inline-form" data-testid="create-form">
-          <input
-            data-testid="create-title"
-            placeholder="标题"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-          />
-          <input
-            data-testid="create-description"
-            placeholder="描述"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-          <input
-            data-testid="create-stage"
-            type="number"
-            min={0}
-            placeholder="Stage"
-            value={stage}
-            onChange={(e) => setStage(e.target.value)}
-          />
-          <button type="submit" data-testid="submit-create">
-            创建
-          </button>
-        </form>
+        <Modal title="新建 Issue" description="在看板上创建一个新的 Issue。" onClose={() => setShowCreate(false)}>
+          <form onSubmit={onCreate} data-testid="create-form">
+            <label>
+              标题
+              <input
+                className="input"
+                data-testid="create-title"
+                placeholder="标题"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+                autoFocus
+              />
+            </label>
+            <label>
+              描述
+              <input
+                className="input"
+                data-testid="create-description"
+                placeholder="描述"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </label>
+            <label>
+              Stage
+              <input
+                className="input"
+                data-testid="create-stage"
+                type="number"
+                min={0}
+                placeholder="Stage"
+                value={stage}
+                onChange={(e) => setStage(e.target.value)}
+              />
+            </label>
+            {error && (
+              <p role="alert" style={{ margin: 0, color: 'var(--destructive)', fontSize: 'var(--text-body)' }}>
+                {error}
+              </p>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="btn btn-outline" onClick={() => setShowCreate(false)}>
+                取消
+              </button>
+              <button type="submit" className="btn btn-primary" data-testid="submit-create">
+                创建
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   )

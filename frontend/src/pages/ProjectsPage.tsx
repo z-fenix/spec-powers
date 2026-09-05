@@ -93,54 +93,75 @@ export function ProjectsPage() {
       </div>
       <div className="page-body">
         <div className="page-gutter">
-          {error && (
+          {error && !showCreate && (
             <p role="alert" data-testid="projects-error">
               {error}
             </p>
           )}
 
+          {projects && projects.length === 0 && <p>还没有项目，先创建一个。</p>}
+
+          <ul className="project-list">
+            {sorted.map((p) => (
+              <li key={p.id} className={p.archived ? 'project-item archived' : 'project-item'}>
+                <div className="project-item-main">
+                  <Link to={`/projects/${p.id}`}>{p.name}</Link>
+                  {p.archived && <span className="badge">已归档</span>}
+                  {p.description && <p className="project-desc">{p.description}</p>}
+                </div>
+                <button data-testid={`archive-${p.id}`} onClick={() => onArchive(p, !p.archived)}>
+                  {p.archived ? '恢复' : '归档'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
       {showCreate && (
-        <Modal title="新建项目" onClose={() => setShowCreate(false)}>
-          <form onSubmit={onCreate} className="inline-form">
-            <input
-              data-testid="project-name"
-              placeholder="项目名称"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              autoFocus
-            />
-            <input
-              data-testid="project-description"
-              placeholder="描述（可选）"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-            <button type="submit" data-testid="confirm-create-project">
-              创建
-            </button>
+        <Modal
+          title="创建项目"
+          description="为工作区新建一个项目。"
+          onClose={() => setShowCreate(false)}
+        >
+          <form onSubmit={onCreate}>
+            <label>
+              名称
+              <input
+                className="input"
+                data-testid="project-name"
+                placeholder="项目名称"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                autoFocus
+              />
+            </label>
+            <label>
+              描述
+              <input
+                className="input"
+                data-testid="project-description"
+                placeholder="描述（可选）"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </label>
+            {error && (
+              <p role="alert" style={{ margin: 0, color: 'var(--destructive)', fontSize: 'var(--text-body)' }}>
+                {error}
+              </p>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="btn btn-outline" onClick={() => setShowCreate(false)}>
+                取消
+              </button>
+              <button type="submit" className="btn btn-primary" data-testid="confirm-create-project">
+                创建
+              </button>
+            </div>
           </form>
         </Modal>
       )}
-
-      {projects && projects.length === 0 && <p>还没有项目，先创建一个。</p>}
-
-      <ul className="project-list">
-        {sorted.map((p) => (
-          <li key={p.id} className={p.archived ? 'project-item archived' : 'project-item'}>
-            <div className="project-item-main">
-              <Link to={`/projects/${p.id}`}>{p.name}</Link>
-              {p.archived && <span className="badge">已归档</span>}
-              {p.description && <p className="project-desc">{p.description}</p>}
-            </div>
-            <button data-testid={`archive-${p.id}`} onClick={() => onArchive(p, !p.archived)}>
-              {p.archived ? '恢复' : '归档'}
-            </button>
-          </li>
-        ))}
-      </ul>
-        </div>
-      </div>
     </div>
   )
 }

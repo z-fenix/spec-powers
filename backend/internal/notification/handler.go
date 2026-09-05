@@ -60,7 +60,9 @@ func (h *Handler) Routes() http.Handler {
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserIDFrom(r.Context())
-	list, err := h.svc.List(r.Context(), userID, r.URL.Query().Get("unread") == "true")
+	list, err := h.svc.List(r.Context(), userID,
+		r.URL.Query().Get("unread") == "true",
+		r.URL.Query().Get("kind"))
 	if err != nil {
 		httpapi.Error(w, httpapi.ErrInternal("list notifications failed"))
 		return

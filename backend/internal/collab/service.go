@@ -36,6 +36,12 @@ type projectAccess interface {
 	GetProjectMember(ctx context.Context, projectID, userID string) (*domain.ProjectMember, error)
 }
 
+// userNameDirectory resolves @-mentions to human users. Satisfied by the
+// postgres UserStore.
+type userNameDirectory interface {
+	ListUsers(ctx context.Context) ([]domain.User, error)
+}
+
 type Service struct {
 	issues      issueLookup
 	projects    projectAccess
@@ -43,6 +49,7 @@ type Service struct {
 	attachments store.AttachmentStore
 	metadata    store.IssueMetadataStore
 	notifier    notification.Sink
+	users       userNameDirectory
 	// commentObserver is called after every created comment (roots and
 	// replies); used by the agent runtime to claim @-mentions. Observer
 	// errors are non-fatal — the comment is already stored.
@@ -71,6 +78,13 @@ func NewService(issues issueLookup, projects projectAccess, comments store.Comme
 // the issue's assignee (unless the author is the assignee themself).
 func (s *Service) WithNotifier(n notification.Sink) *Service {
 	s.notifier = n
+	return s
+}
+
+// WithUserDirectory attaches the user directory used to resolve @-mentions
+// of human users in comment content.
+func (s *Service) WithUserDirectory(u userNameDirectory) *Service {
+	s.users = u
 	return s
 }
 
@@ -149,6 +163,7 @@ func (s *Service) AddComment(ctx context.Context, userID, issueID, parentComment
 		return nil, httpapi.ErrInternal("create comment failed")
 	}
 	s.notifyComment(ctx, i, userID, c.Content)
+	s.notifyMentions(ctx, i, userID, c.Content)
 	if s.commentObserver != nil {
 		s.commentObserver(ctx, c)
 	}
@@ -173,6 +188,41 @@ func (s *Service) notifyComment(ctx context.Context, i *domain.Issue, authorID, 
 		IssueID:   i.ID,
 		ProjectID: i.ProjectID,
 	})
+}
+
+// notifyMentions tells every human user @-mentioned in the comment about it.
+// The author never notifies themself, the assignee is skipped (they already
+// get the "comment" notice above), and agents are not in the user directory
+// — their mention trigger enqueues runs instead. Best-effort: directory
+// errors only skip the notifications.
+func (s *Service) notifyMentions(ctx context.Context, i *domain.Issue, authorID, content string) {
+	if s.notifier == nil || s.users == nil {
+		return
+	}
+	users, err := s.users.ListUsers(ctx)
+	if err != nil {
+		return
+	}
+	body := content
+	if len(body) > 200 {
+		body = body[:200] + "…"
+	}
+	for _, u := range users {
+		if u.ID == authorID || u.ID == i.AssigneeID {
+			continue
+		}
+		if !notification.MentionsName(content, u.DisplayName) {
+			continue
+		}
+		s.notifier.Notify(ctx, notification.NotifyInput{
+			UserID:    u.ID,
+			Kind:      "mention",
+			Title:     "You were mentioned in: " + i.Title,
+			Body:      body,
+			IssueID:   i.ID,
+			ProjectID: i.ProjectID,
+		})
+	}
 }
 
 func (s *Service) ListComments(ctx context.Context, userID, issueID string) ([]domain.IssueComment, error) {

@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -44,13 +45,19 @@ func (s *NotificationStore) CreateNotification(ctx context.Context, n *domain.No
 		n.UserID, n.Kind, n.Title, n.Body, n.IssueID, n.ProjectID))
 }
 
-func (s *NotificationStore) ListNotifications(ctx context.Context, userID string, unreadOnly bool) ([]domain.Notification, error) {
+func (s *NotificationStore) ListNotifications(ctx context.Context, userID string, unreadOnly bool, kind string) ([]domain.Notification, error) {
 	query := `SELECT ` + notificationColumns + ` FROM notifications WHERE user_id = $1`
+	args := []any{userID}
 	if unreadOnly {
+		args = append(args, true)
 		query += ` AND read_at IS NULL`
 	}
+	if kind != "" {
+		query += ` AND kind = $` + strconv.Itoa(len(args)+1)
+		args = append(args, kind)
+	}
 	query += ` ORDER BY created_at DESC, id DESC`
-	rows, err := s.pool.Query(ctx, query, userID)
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list notifications: %w", err)
 	}
@@ -64,6 +71,25 @@ func (s *NotificationStore) ListNotifications(ctx context.Context, userID string
 		list = append(list, *n)
 	}
 	return list, rows.Err()
+}
+
+// HasNotificationForIssue reports whether the user already holds a
+// notification with this kind and title for the issue; the due-date
+// scanner dedupes repeated scans with it.
+func (s *NotificationStore) HasNotificationForIssue(ctx context.Context, userID, issueID, kind, title string) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM notifications
+			WHERE user_id = $1
+			  AND issue_id = NULLIF($2, '')::uuid
+			  AND kind = $3
+			  AND title = $4)`,
+		userID, issueID, kind, title).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("has notification for issue: %w", err)
+	}
+	return exists, nil
 }
 
 func (s *NotificationStore) CountUnreadNotifications(ctx context.Context, userID string) (int, error) {

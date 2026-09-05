@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { IssueDetailPage } from './IssueDetailPage'
@@ -34,6 +34,7 @@ vi.mock('../api/issues', async (importOriginal) => {
     transitionIssue: vi.fn(),
     listChildren: vi.fn(),
     listComments: vi.fn(),
+    listIssueEvents: vi.fn(),
     addComment: vi.fn(),
     listAttachments: vi.fn(),
     uploadAttachment: vi.fn(),
@@ -43,6 +44,18 @@ vi.mock('../api/issues', async (importOriginal) => {
     deleteMetadata: vi.fn(),
   }
 })
+
+vi.mock('../api/properties', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/properties')>()
+  return {
+    ...actual,
+    listPropertyDefinitions: vi.fn(),
+    listIssueProperties: vi.fn(),
+    setIssueProperty: vi.fn(),
+  }
+})
+
+import * as propertiesApi from '../api/properties'
 
 const mocked = vi.mocked(api)
 
@@ -95,6 +108,9 @@ beforeEach(() => {
   mocked.listComments.mockResolvedValue([])
   mocked.listAttachments.mockResolvedValue([])
   mocked.listMetadata.mockResolvedValue([])
+  vi.mocked(propertiesApi.listPropertyDefinitions).mockResolvedValue([])
+  vi.mocked(propertiesApi.listIssueProperties).mockResolvedValue([])
+  mocked.listIssueEvents.mockResolvedValue([])
 })
 
 describe('IssueDetailPage', () => {
@@ -127,6 +143,42 @@ describe('IssueDetailPage', () => {
 
     const panel = await screen.findByTestId('issue-usage')
     expect(within(panel).getByTestId('usage-calls')).toHaveTextContent('0')
+  it('renders the change timeline', async () => {
+    mocked.listIssueEvents.mockResolvedValue([
+      {
+        id: 'e1',
+        issue_id: 'i1',
+        actor_id: 'u9',
+        field: 'created',
+        old_value: '',
+        new_value: 'parent issue',
+        created_at: '2026-09-05T00:00:00Z',
+      },
+      {
+        id: 'e2',
+        issue_id: 'i1',
+        actor_id: 'u2',
+        field: 'status',
+        old_value: 'todo',
+        new_value: 'in_progress',
+        created_at: '2026-09-05T01:00:00Z',
+      },
+    ])
+    renderPage()
+
+    const timeline = await screen.findByTestId('timeline')
+    expect(within(timeline).getByTestId('timeline-event-created')).toBeInTheDocument()
+    expect(within(timeline).getByTestId('timeline-event-status')).toBeInTheDocument()
+    expect(within(timeline).getByTestId('timeline-change-status')).toHaveTextContent(
+      'todo → in_progress',
+    )
+    expect(within(timeline).getByTestId('timeline-actor-status')).toHaveTextContent('u2')
+  })
+
+  it('shows the empty timeline state', async () => {
+    renderPage()
+
+    expect(await screen.findByTestId('timeline-empty')).toBeInTheDocument()
   })
 
   it('renders the subtask tree', async () => {
@@ -336,5 +388,93 @@ describe('IssueDetailPage', () => {
     renderPage()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('加载失败')
+  })
+
+  it('hides the property panel when the project has no definitions', async () => {
+    renderPage()
+
+    await screen.findByTestId('issue-detail')
+    expect(screen.queryByTestId('property-panel')).not.toBeInTheDocument()
+  })
+
+  it('shows and edits a select property', async () => {
+    vi.mocked(propertiesApi.listPropertyDefinitions).mockResolvedValue([
+      {
+        id: 'prop1',
+        project_id: 'p1',
+        name: '模块',
+        type: 'select',
+        options: ['前端', '后端'],
+        position: 0,
+      },
+    ])
+    vi.mocked(propertiesApi.listIssueProperties).mockResolvedValue([
+      { issue_id: 'i1', property_id: 'prop1', value: '前端' },
+    ])
+    vi.mocked(propertiesApi.setIssueProperty).mockResolvedValue({
+      issue_id: 'i1',
+      property_id: 'prop1',
+      value: '后端',
+    })
+    renderPage()
+
+    const row = await screen.findByTestId('property-row-prop1')
+    expect(within(row).getByText('模块')).toBeInTheDocument()
+    expect(screen.getByTestId('property-input-prop1')).toHaveValue('前端')
+
+    await userEvent.selectOptions(screen.getByTestId('property-input-prop1'), '后端')
+
+    expect(propertiesApi.setIssueProperty).toHaveBeenCalledWith('p1', 'i1', 'prop1', '后端')
+  })
+
+  it('edits a text property and shows a validation error', async () => {
+    vi.mocked(propertiesApi.listPropertyDefinitions).mockResolvedValue([
+      {
+        id: 'prop2',
+        project_id: 'p1',
+        name: '备注',
+        type: 'text',
+        options: [],
+        position: 0,
+      },
+    ])
+    vi.mocked(propertiesApi.setIssueProperty).mockRejectedValue(
+      new ApiError(400, 'invalid_request', 'bad value'),
+    )
+    renderPage()
+
+    await screen.findByTestId('property-row-prop2')
+    await userEvent.type(screen.getByTestId('property-input-prop2'), 'hello')
+    fireEvent.blur(screen.getByTestId('property-input-prop2'))
+
+    expect(propertiesApi.setIssueProperty).toHaveBeenCalledWith('p1', 'i1', 'prop2', 'hello')
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+  })
+
+  it('toggles multi_select options as checkboxes', async () => {
+    vi.mocked(propertiesApi.listPropertyDefinitions).mockResolvedValue([
+      {
+        id: 'prop3',
+        project_id: 'p1',
+        name: '标签',
+        type: 'multi_select',
+        options: ['x', 'y'],
+        position: 0,
+      },
+    ])
+    vi.mocked(propertiesApi.listIssueProperties).mockResolvedValue([
+      { issue_id: 'i1', property_id: 'prop3', value: '["x"]' },
+    ])
+    vi.mocked(propertiesApi.setIssueProperty).mockResolvedValue({
+      issue_id: 'i1',
+      property_id: 'prop3',
+      value: '["x","y"]',
+    })
+    renderPage()
+
+    await screen.findByTestId('property-row-prop3')
+    await userEvent.click(screen.getByLabelText('y'))
+
+    expect(propertiesApi.setIssueProperty).toHaveBeenCalledWith('p1', 'i1', 'prop3', '["x","y"]')
   })
 })

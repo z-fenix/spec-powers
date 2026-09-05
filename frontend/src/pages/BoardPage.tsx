@@ -182,6 +182,8 @@ export function BoardPage() {
   const [view, setView] = useState<'board' | 'list'>('board')
   const [statusFilter, setStatusFilter] = useState('')
   const [stageFilter, setStageFilter] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchInput, setSearchInput] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -189,7 +191,7 @@ export function BoardPage() {
   const [dragIssueId, setDragIssueId] = useState('')
 
   const load = useCallback(
-    (filter?: { status?: string; stage?: number }) => {
+    (filter?: { status?: string; stage?: number; query?: string }) => {
       return listIssues(id, filter)
         .then(setIssues)
         .catch((err) => setError(errorMessage(err, '加载失败')))
@@ -206,9 +208,21 @@ export function BoardPage() {
   const onFilter = (status: string, stage: string) => {
     setStatusFilter(status)
     setStageFilter(stage)
-    const filter: { status?: string; stage?: number } = {}
+    const filter: { status?: string; stage?: number; query?: string } = {}
     if (status) filter.status = status
     if (stage) filter.stage = Number(stage)
+    if (searchQuery) filter.query = searchQuery
+    load(filter)
+  }
+
+  const onSearch = (e: FormEvent) => {
+    e.preventDefault()
+    const q = searchInput.trim()
+    setSearchQuery(q)
+    const filter: { status?: string; stage?: number; query?: string } = {}
+    if (statusFilter) filter.status = statusFilter
+    if (stageFilter) filter.stage = Number(stageFilter)
+    if (q) filter.query = q
     load(filter)
   }
 

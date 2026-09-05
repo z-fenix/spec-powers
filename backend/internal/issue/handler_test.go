@@ -17,6 +17,7 @@ type handlerFixture struct {
 	handler http.Handler
 	tokens  *auth.TokenService
 	svc     *Service
+	events  *fakeEventStore
 }
 
 func setupHandler(t *testing.T) *handlerFixture {
@@ -26,7 +27,8 @@ func setupHandler(t *testing.T) *handlerFixture {
 		members:  map[string]string{"p1|alice": "owner", "p1|bob": "member"},
 	}
 	users := &fakeUsers{ids: map[string]bool{"carol": true}}
-	svc := NewService(newFakeIssues(), projects, users)
+	events := &fakeEventStore{}
+	svc := NewService(newFakeIssues(), projects, users).WithEventStore(events)
 	tokens := auth.NewTokenService("test-secret", 15*time.Minute)
 	h := NewHandler(svc, tokens)
 
@@ -35,7 +37,7 @@ func setupHandler(t *testing.T) *handlerFixture {
 	r.Route("/{projectID}", func(r chi.Router) {
 		r.Mount("/issues", h.Routes())
 	})
-	return &handlerFixture{handler: r, tokens: tokens, svc: svc}
+	return &handlerFixture{handler: r, tokens: tokens, svc: svc, events: events}
 }
 
 func (f *handlerFixture) token(t *testing.T, userID string) string {

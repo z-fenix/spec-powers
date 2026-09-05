@@ -8,6 +8,7 @@ import {
   listAttachments,
   listChildren,
   listComments,
+  listIssueEvents,
   listMetadata,
   setMetadata,
   transitionIssue,
@@ -16,6 +17,7 @@ import {
   type Attachment,
   type Issue,
   type IssueComment,
+  type IssueEvent,
   type MetadataEntry,
 } from '../api/issues'
 import { ApiError } from '../api/client'
@@ -126,6 +128,57 @@ function CommentThread({
         回复
       </button>
     </div>
+  )
+}
+
+const EVENT_FIELD_LABELS: Record<string, string> = {
+  created: '创建',
+  status: '状态',
+  assignee: '负责人',
+  title: '标题',
+  description: '描述',
+  priority: '优先级',
+  due_date: '截止日',
+  labels: '标签',
+  parent: '父任务',
+  stage: 'Stage',
+  position: '位置',
+}
+
+function TimelinePanel({ projectId, issueId }: { projectId: string; issueId: string }) {
+  const [events, setEvents] = useState<IssueEvent[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    listIssueEvents(projectId, issueId)
+      .then((list) => {
+        if (!cancelled) setEvents(list)
+      })
+      .catch(() => {
+        if (!cancelled) setEvents([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, issueId])
+
+  if (events === null) return <p data-testid="timeline-loading">加载中…</p>
+  if (events.length === 0) return <p data-testid="timeline-empty">暂无变更记录。</p>
+  return (
+    <ul className="issue-timeline" data-testid="timeline">
+      {events.map((e) => (
+        <li key={e.id} data-testid={`timeline-event-${e.field}`}>
+          <span className="badge">{EVENT_FIELD_LABELS[e.field] ?? e.field}</span>{' '}
+          <span data-testid={`timeline-actor-${e.field}`}>{e.actor_id || '系统'}</span>
+          {e.field !== 'created' && (
+            <span data-testid={`timeline-change-${e.field}`}>
+              {' '}
+              {e.old_value || '(空)'} → {e.new_value || '(空)'}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
   )
 }
 

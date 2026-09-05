@@ -5,8 +5,10 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { IssueDetailPage } from './IssueDetailPage'
 import * as api from '../api/issues'
 import * as workflowApi from '../api/workflow'
-import * as runsApi from '../api/runs'
+import * as prApi from '../api/pullrequests'
+import * as runsApi from '../api/runs' 
 import type { Issue } from '../api/issues'
+import type { PullRequest } from '../api/pullrequests'
 import { ApiError } from '../api/client'
 
 vi.mock('../api/runs', async (importOriginal) => {
@@ -22,6 +24,14 @@ vi.mock('../api/workflow', async (importOriginal) => {
   return {
     ...actual,
     getChangeByIssue: vi.fn(),
+  }
+})
+
+vi.mock('../api/pullrequests', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/pullrequests')>()
+  return {
+    ...actual,
+    listIssuePullRequests: vi.fn(),
   }
 })
 
@@ -115,6 +125,7 @@ beforeEach(() => {
   vi.mocked(propertiesApi.listPropertyDefinitions).mockResolvedValue([])
   vi.mocked(propertiesApi.listIssueProperties).mockResolvedValue([])
   mocked.listIssueEvents.mockResolvedValue([])
+  vi.mocked(prApi.listIssuePullRequests).mockResolvedValue([])
 })
 
 describe('IssueDetailPage', () => {
@@ -515,5 +526,63 @@ describe('IssueDetailPage', () => {
     await userEvent.click(screen.getByLabelText('y'))
 
     expect(propertiesApi.setIssueProperty).toHaveBeenCalledWith('p1', 'i1', 'prop3', '["x","y"]')
+  })
+})
+
+describe('IssueDetailPage linked PRs', () => {
+  const pr: PullRequest = {
+    id: 'pr1',
+    project_id: 'p1',
+    repo: 'z-fenix/spec-powers',
+    number: 5,
+    title: 'feat: S4-2',
+    body: 'Closes SP-44',
+    head_branch: 'agent/kuncoding/SP-44-x',
+    state: 'merged',
+    merged_at: '2026-09-05T09:00:00Z',
+    issue_keys: ['SP-44'],
+    created_at: '2026-09-05T08:00:00Z',
+    updated_at: '2026-09-05T09:00:00Z',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(workflowApi.getChangeByIssue).mockRejectedValue(
+      new ApiError(404, 'not_found', 'no change'),
+    )
+    mocked.getIssue.mockResolvedValue(issue)
+    mocked.listChildren.mockResolvedValue([])
+    mocked.listComments.mockResolvedValue([])
+    mocked.listAttachments.mockResolvedValue([])
+    mocked.listMetadata.mockResolvedValue([])
+    mocked.listIssueEvents.mockResolvedValue([])
+    vi.mocked(prApi.listIssuePullRequests).mockResolvedValue([])
+  })
+
+  it('shows the empty hint when no PRs are linked', async () => {
+    renderPage()
+
+    expect(await screen.findByTestId('linked-prs-empty')).toBeInTheDocument()
+    expect(prApi.listIssuePullRequests).toHaveBeenCalledWith('p1', 'i1')
+  })
+
+  it('renders linked PRs with number, title and state', async () => {
+    vi.mocked(prApi.listIssuePullRequests).mockResolvedValue([pr])
+    renderPage()
+
+    expect(await screen.findByTestId('linked-prs')).toBeInTheDocument()
+    expect(screen.getByTestId('linked-pr-pr1')).toBeInTheDocument()
+    expect(screen.getByTestId('linked-pr-title-pr1')).toHaveTextContent('#5 feat: S4-2')
+    expect(screen.getByTestId('linked-pr-state-pr1')).toHaveTextContent('已合并')
+    expect(screen.getByTestId('linked-pr-keys-pr1')).toHaveTextContent('SP-44')
+  })
+
+  it('renders an open PR with its raw state when unknown', async () => {
+    vi.mocked(prApi.listIssuePullRequests).mockResolvedValue([
+      { ...pr, id: 'pr2', state: 'open' },
+    ])
+    renderPage()
+
+    expect(await screen.findByTestId('linked-pr-state-pr2')).toHaveTextContent('开放')
   })
 })

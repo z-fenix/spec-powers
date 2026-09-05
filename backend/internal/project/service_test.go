@@ -30,9 +30,9 @@ func newFakeProjects() *fakeProjects {
 	}
 }
 
-func (f *fakeProjects) CreateProject(_ context.Context, workspaceID, name, description, createdBy string) (*domain.Project, error) {
+func (f *fakeProjects) CreateProject(_ context.Context, workspaceID, name, description, createdBy, key string) (*domain.Project, error) {
 	f.nextID++
-	p := &domain.Project{ID: string(rune('A' + f.nextID)), WorkspaceID: workspaceID, Name: name, Description: description, CreatedBy: createdBy}
+	p := &domain.Project{ID: string(rune('A' + f.nextID)), WorkspaceID: workspaceID, Name: name, Description: description, Key: key, CreatedBy: createdBy}
 	clone := *p
 	f.byID[p.ID] = &clone
 	return p, nil
@@ -223,7 +223,7 @@ func newTestService() (*Service, *fakeProjects, *fakeWorkspaces) {
 
 func TestCreateProjectWithoutWorkspaceCreatesDefault(t *testing.T) {
 	svc, _, _ := newTestService()
-	p, err := svc.CreateProject(context.Background(), "u1", "My Project", "")
+	p, err := svc.CreateProject(context.Background(), "u1", "My Project", "", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -234,14 +234,14 @@ func TestCreateProjectWithoutWorkspaceCreatesDefault(t *testing.T) {
 
 func TestCreateProjectValidation(t *testing.T) {
 	svc, _, _ := newTestService()
-	if _, err := svc.CreateProject(context.Background(), "u1", "  ", ""); err == nil {
+	if _, err := svc.CreateProject(context.Background(), "u1", "  ", "", ""); err == nil {
 		t.Error("empty name accepted")
 	}
 }
 
 func TestRequireProjectRole(t *testing.T) {
 	svc, projects, _ := newTestService()
-	p, err := svc.CreateProject(context.Background(), "u1", "P1", "")
+	p, err := svc.CreateProject(context.Background(), "u1", "P1", "", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestRequireProjectRole(t *testing.T) {
 
 func TestRequireProjectRoleForbiddenAndNotFound(t *testing.T) {
 	svc, projects, _ := newTestService()
-	p, err := svc.CreateProject(context.Background(), "u1", "P1", "")
+	p, err := svc.CreateProject(context.Background(), "u1", "P1", "", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestRequireProjectRoleForbiddenAndNotFound(t *testing.T) {
 
 func TestAddMemberOnlyOwnerAndByEmail(t *testing.T) {
 	svc, _, _ := newTestService()
-	p, err := svc.CreateProject(context.Background(), "u1", "P1", "")
+	p, err := svc.CreateProject(context.Background(), "u1", "P1", "", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestAddMemberOnlyOwnerAndByEmail(t *testing.T) {
 
 func TestListProjectsOnlyOwn(t *testing.T) {
 	svc, _, _ := newTestService()
-	if _, err := svc.CreateProject(context.Background(), "u1", "P1", ""); err != nil {
+	if _, err := svc.CreateProject(context.Background(), "u1", "P1", "", ""); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	list, err := svc.ListProjects(context.Background(), "u1")
@@ -338,7 +338,7 @@ func TestListProjectsOnlyOwn(t *testing.T) {
 
 func createOwnedProject(t *testing.T, svc *Service, userID, name string) *domain.Project {
 	t.Helper()
-	p, err := svc.CreateProject(context.Background(), userID, name, "")
+	p, err := svc.CreateProject(context.Background(), userID, name, "", "")
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}

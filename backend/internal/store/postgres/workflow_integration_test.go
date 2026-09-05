@@ -34,7 +34,7 @@ func TestWorkflowStoreIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
 	}
-	proj, err := projects.CreateProject(ctx, ws.ID, "WF Project", "d", owner.ID)
+	proj, err := projects.CreateProject(ctx, ws.ID, "WF Project", "d", owner.ID, "")
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}

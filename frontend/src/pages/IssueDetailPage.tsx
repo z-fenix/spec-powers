@@ -25,6 +25,7 @@ import {
   type Subscriber,
 } from '../api/issues'
 import { listAgents } from '../api/agents'
+import { listIssuePullRequests, type PullRequest } from '../api/pullrequests'
 import { ApiError } from '../api/client'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
 import { StatusIcon } from '../components/StatusIcon'
@@ -198,6 +199,56 @@ function TimelinePanel({ projectId, issueId }: { projectId: string; issueId: str
         </li>
       ))}
     </ul>
+  )
+}
+
+const PR_STATE_LABELS: Record<string, string> = {
+  open: '开放',
+  merged: '已合并',
+  closed: '已关闭',
+}
+
+function LinkedPullRequestsPanel({ projectId, issueId }: { projectId: string; issueId: string }) {
+  const [prs, setPRs] = useState<PullRequest[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    listIssuePullRequests(projectId, issueId)
+      .then((list) => {
+        if (!cancelled) setPRs(list)
+      })
+      .catch(() => {
+        if (!cancelled) setPRs([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, issueId])
+
+  if (prs === null) return null
+  return (
+    <div data-testid="linked-prs">
+      <p className="section-title">关联 PR</p>
+      {prs.length === 0 && <p data-testid="linked-prs-empty">暂无关联 PR。</p>}
+      <ul className="linked-pr-list">
+        {prs.map((pr) => (
+          <li key={pr.id} data-testid={`linked-pr-${pr.id}`}>
+            <span data-testid={`linked-pr-title-${pr.id}`}>
+              #{pr.number} {pr.title}
+            </span>{' '}
+            <span className="badge" data-testid={`linked-pr-state-${pr.id}`}>
+              {PR_STATE_LABELS[pr.state] ?? pr.state}
+            </span>
+            {pr.issue_keys.length > 0 && (
+              <span className="linked-pr-keys" data-testid={`linked-pr-keys-${pr.id}`}>
+                {' '}
+                {pr.issue_keys.join(', ')}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -863,6 +914,7 @@ export function IssueDetailPage() {
             <TimelinePanel projectId={id} issueId={issueId} />
           </div>
 
+          <LinkedPullRequestsPanel projectId={id} issueId={issueId} />
           <AttachmentPanel
             projectId={id}
             issueId={issueId}
@@ -887,6 +939,41 @@ export function IssueDetailPage() {
 
       <WorkflowProgress issueId={issueId} />
       <ArtifactViewer issueId={issueId} />
+
+      <h3>评论</h3>
+      {roots.map((c) => (
+        <CommentThread
+          key={c.id}
+          comment={c}
+          replies={repliesOf(c.id)}
+          onReply={onReply}
+        />
+      ))}
+      <form onSubmit={onSubmitComment} className="inline-form">
+        <input
+          data-testid="new-comment"
+          placeholder="写评论…"
+          value={newComment}
+          onChange={(e) => setNewComment(e.target.value)}
+        />
+        <button type="submit" data-testid="submit-comment">
+          评论
+        </button>
+      </form>
+
+      <AttachmentPanel
+        projectId={id}
+        issueId={issueId}
+        attachments={attachments}
+        onChanged={loadAttachments}
+      />
+      <MetadataPanel
+        projectId={id}
+        issueId={issueId}
+        entries={metadata}
+        onChanged={loadMetadata}
+      />
+    </section>
     </div>
   )
 }

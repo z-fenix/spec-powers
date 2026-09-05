@@ -28,7 +28,7 @@ func TestPropertyStoreIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
 	}
-	p, err := projects.CreateProject(ctx, ws.ID, "Props", "", owner.ID)
+	p, err := projects.CreateProject(ctx, ws.ID, "Props", "", owner.ID, "")
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}

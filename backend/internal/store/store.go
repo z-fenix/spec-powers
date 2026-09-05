@@ -103,7 +103,7 @@ type WorkspaceStatusStore interface {
 }
 
 type ProjectStore interface {
-	CreateProject(ctx context.Context, workspaceID, name, description, createdBy string) (*domain.Project, error)
+	CreateProject(ctx context.Context, workspaceID, name, description, createdBy, key string) (*domain.Project, error)
 	GetProject(ctx context.Context, id string) (*domain.Project, error)
 	UpdateProject(ctx context.Context, id, name, description string) (*domain.Project, error)
 	SetProjectArchived(ctx context.Context, id string, archived bool) (*domain.Project, error)
@@ -296,6 +296,24 @@ type TaskMappingStore interface {
 	// given items, all bound to the tasks artifact version artifactID.
 	SetTaskMappings(ctx context.Context, changeID, artifactID string, items []domain.TaskMapping) error
 	ListTaskMappings(ctx context.Context, changeID string) ([]domain.TaskMapping, error)
+}
+
+// PullRequestStore records external pull requests and their issue links.
+// UpsertPullRequest finds the PR by (project_id, repo, number) and updates
+// its title/body/branch/state, or inserts it when absent.
+type PullRequestStore interface {
+	UpsertPullRequest(ctx context.Context, pr *domain.PullRequest) (*domain.PullRequest, error)
+	GetPullRequest(ctx context.Context, id string) (*domain.PullRequest, error)
+	// GetPullRequestByProjectNumber resolves a PR by its natural key
+	// (project, repo, number); ErrNotFound when absent.
+	GetPullRequestByProjectNumber(ctx context.Context, projectID, repo string, number int64) (*domain.PullRequest, error)
+	UpdatePullRequestState(ctx context.Context, id, state string, mergedAt *time.Time) (*domain.PullRequest, error)
+	// LinkIssue connects a PR to an issue; repeats are idempotent.
+	LinkIssue(ctx context.Context, pullRequestID, issueID string) error
+	// ListPullRequestsForIssue returns the issue's linked PRs, newest first.
+	ListPullRequestsForIssue(ctx context.Context, issueID string) ([]domain.PullRequest, error)
+	// ListLinkedIssues returns the issue keys linked to a PR, in link order.
+	ListLinkedIssues(ctx context.Context, pullRequestID string) ([]string, error)
 }
 
 type NotificationStore interface {

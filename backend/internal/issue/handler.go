@@ -20,6 +20,9 @@ type Handler struct {
 	// collab is the comment/attachment/metadata subrouter mounted under
 	// /{issueID}; nil in tests that don't exercise collaboration.
 	collab http.Handler
+	// pullRequests is the linked-PR listing subrouter mounted under
+	// /{issueID}/pullrequests; nil in tests that don't exercise PRs.
+	pullRequests http.Handler
 	// properties is the issue property-value subrouter mounted under
 	// /{issueID}/properties; nil in tests that don't exercise properties.
 	properties http.Handler
@@ -32,6 +35,13 @@ func NewHandler(svc *Service, tokens *auth.TokenService) *Handler {
 // WithCollab attaches the collaboration subrouter served under /{issueID}.
 func (h *Handler) WithCollab(c http.Handler) *Handler {
 	h.collab = c
+	return h
+}
+
+// WithPullRequests attaches the linked-PR listing subrouter served under
+// /{issueID}/pullrequests.
+func (h *Handler) WithPullRequests(p http.Handler) *Handler {
+	h.pullRequests = p
 	return h
 }
 
@@ -108,6 +118,9 @@ func (h *Handler) Routes() http.Handler {
 			r.Mount("/properties", h.properties)
 		}
 		r.Get("/events", h.events)
+		if h.pullRequests != nil {
+			r.Mount("/pullrequests", h.pullRequests)
+		}
 		if h.collab != nil {
 			r.Mount("/", h.collab)
 		}

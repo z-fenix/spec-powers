@@ -30,9 +30,12 @@ func NewService(projects store.ProjectStore, users store.UserStore, members stor
 	}
 }
 
-func (s *Service) CreateProject(ctx context.Context, userID, name, description string) (*domain.Project, error) {
+func (s *Service) CreateProject(ctx context.Context, userID, name, description, key string) (*domain.Project, error) {
 	if strings.TrimSpace(name) == "" {
 		return nil, httpapi.ErrInvalid("project name is required")
+	}
+	if err := validateProjectKey(key); err != nil {
+		return nil, err
 	}
 	wsIDs, err := s.members.ListWorkspaceIDsForUser(ctx, userID)
 	if err != nil {
@@ -52,7 +55,10 @@ func (s *Service) CreateProject(ctx context.Context, userID, name, description s
 		wsID = ws.ID
 	}
 
-	p, err := s.projects.CreateProject(ctx, wsID, name, description, userID)
+	p, err := s.projects.CreateProject(ctx, wsID, name, description, userID, key)
+	if err == store.ErrConflict {
+		return nil, httpapi.ErrConflict("project key already in use")
+	}
 	if err != nil {
 		return nil, httpapi.ErrInternal("create project failed")
 	}

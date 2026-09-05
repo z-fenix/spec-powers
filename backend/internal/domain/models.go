@@ -30,7 +30,10 @@ type Project struct {
 	WorkspaceID string
 	Name        string
 	Description string
-	Archived    bool
+	// Key is the short uppercase prefix ("SP") used in issue keys
+	// ("SP-44"); empty means the project has no key yet.
+	Key      string
+	Archived bool
 	CreatedBy   string
 	CreatedAt   time.Time
 }
@@ -69,6 +72,8 @@ type ProjectContext struct {
 
 // Issue is a unit of work inside a project. ParentID empty means a root
 // issue; AssigneeID empty means unassigned; DueDate nil means no deadline.
+// Number is the per-project sequence and Key the display key
+// ("<project key>-<number>", empty when the project has no key).
 type Issue struct {
 	ID          string
 	ProjectID   string
@@ -82,9 +87,29 @@ type Issue struct {
 	Labels      []string
 	Stage       int
 	Position    int
+	Number      int64
+	Key         string
 	CreatedBy   string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+// PullRequest is an external pull request recorded against a project.
+// State is "open", "merged" or "closed"; MergedAt is stamped when the state
+// moves to merged.
+type PullRequest struct {
+	ID         string
+	ProjectID  string
+	Repo       string
+	Number     int64
+	Title      string
+	Body       string
+	HeadBranch string
+	State      string
+	MergedAt   *time.Time
+	CreatedBy  string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // PropertyDefinition is a project-level custom property. Type is one of

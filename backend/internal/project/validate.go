@@ -13,6 +13,21 @@ const (
 	ResourceTypeWorktree       = "worktree"
 )
 
+// projectKeyRe: uppercase prefix used in issue keys ("SP" in "SP-44"),
+// 2–16 chars, letters/digits/underscore, starting with a letter.
+var projectKeyRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]{1,15}$`)
+
+// validateProjectKey accepts "" (no key) or a 2–16 char uppercase prefix.
+func validateProjectKey(key string) error {
+	if key == "" {
+		return nil
+	}
+	if !projectKeyRe.MatchString(key) {
+		return httpapi.ErrInvalid("project key must be 2-16 uppercase letters/digits/underscores starting with a letter")
+	}
+	return nil
+}
+
 // validateResource checks the resource type, a non-empty label, and the
 // pointer format for the type. Hosted-platform pointers validate through
 // their registered platform provider.

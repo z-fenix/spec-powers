@@ -77,6 +77,17 @@ function IconSquad() {
   )
 }
 
+function IconAgent() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <rect x="2.75" y="4.75" width="10.5" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="5.75" cy="8.25" r="0.9" fill="currentColor" />
+      <circle cx="10.25" cy="8.25" r="0.9" fill="currentColor" />
+      <path d="M8 2.25V4.5M5.5 11.5h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function ThemeIcon({ resolved }: { resolved: 'light' | 'dark' }) {
   if (resolved === 'dark') {
     return (
@@ -141,6 +152,10 @@ export function Layout() {
             <NavLink to="/" end className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
               <IconFolder />
               项目
+            </NavLink>
+            <NavLink to="/agents" className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
+              <IconAgent />
+              Agents
             </NavLink>
             <NavLink to="/squads" className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
               <IconSquad />

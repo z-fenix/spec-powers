@@ -6,7 +6,7 @@ import { IssueDetailPage } from './IssueDetailPage'
 import * as api from '../api/issues'
 import * as workflowApi from '../api/workflow'
 import * as prApi from '../api/pullrequests'
-import * as runsApi from '../api/runs' 
+import * as runsApi from '../api/runs'
 import type { Issue } from '../api/issues'
 import type { PullRequest } from '../api/pullrequests'
 import { ApiError } from '../api/client'
@@ -16,6 +16,7 @@ vi.mock('../api/runs', async (importOriginal) => {
   return {
     ...actual,
     getIssueUsage: vi.fn(),
+    listRuns: vi.fn(),
   }
 })
 
@@ -116,6 +117,7 @@ beforeEach(() => {
     prompt_tokens: 0,
     completion_tokens: 0,
   })
+  vi.mocked(runsApi.listRuns).mockResolvedValue([])
   mocked.getIssue.mockResolvedValue(issue)
   mocked.listChildren.mockResolvedValue([])
   mocked.listComments.mockResolvedValue([])

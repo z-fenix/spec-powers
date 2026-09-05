@@ -23,11 +23,11 @@ export default function App() {
         <Route element={<RequireAuth />}>
           <Route element={<Layout />}>
             <Route path="/" element={<ProjectsPage />} />
+            <Route path="/agents" element={<AgentsPage />} />
             <Route path="/projects/:id" element={<ProjectDetailPage />} />
             <Route path="/projects/:id/board" element={<BoardPage />} />
             <Route path="/projects/:id/issues/:issueId" element={<IssueDetailPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
-            <Route path="/agents" element={<AgentsPage />} />
             <Route path="/squads" element={<SquadsPage />} />
             <Route path="/webhooks" element={<WebhooksPage />} />
             <Route path="/autopilots" element={<AutopilotsPage />} />

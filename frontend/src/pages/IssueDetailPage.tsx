@@ -41,6 +41,7 @@ import {
 import { WorkflowProgress } from '../components/WorkflowProgress'
 import { ArtifactViewer } from '../components/ArtifactViewer'
 import { IssueUsagePanel } from '../components/Usage'
+import { RunHistory } from '../components/RunHistory'
 import { MentionInput, type MentionCandidate } from '../components/MentionInput'
 import { renderMarkdown } from '../lib/markdown'
 
@@ -821,19 +822,13 @@ export function IssueDetailPage() {
             <div className="detail-section">
               <h3>时间线</h3>
               <TimelinePanel projectId={id} issueId={issueId} />
+              <IssueUsagePanel issueId={issueId} />
             </div>
 
             <div className="detail-section">
               <WorkflowProgress issueId={issueId} />
               <ArtifactViewer issueId={issueId} />
-            </div>
-
-            <div className="detail-section">
-              <h3>时间线</h3>
-              <TimelinePanel projectId={id} issueId={issueId} />
-              <IssueUsagePanel issueId={issueId} />
-              <h3>时间线</h3>
-              <TimelinePanel projectId={id} issueId={issueId} />
+              <RunHistory issueId={issueId} />
             </div>
 
             <div className="detail-section">
@@ -936,43 +931,6 @@ export function IssueDetailPage() {
         </aside>
       </div>
       <PropertyValuesPanel projectId={id} issueId={issueId} />
-
-      <WorkflowProgress issueId={issueId} />
-      <ArtifactViewer issueId={issueId} />
-
-      <h3>评论</h3>
-      {roots.map((c) => (
-        <CommentThread
-          key={c.id}
-          comment={c}
-          replies={repliesOf(c.id)}
-          onReply={onReply}
-        />
-      ))}
-      <form onSubmit={onSubmitComment} className="inline-form">
-        <input
-          data-testid="new-comment"
-          placeholder="写评论…"
-          value={newComment}
-          onChange={(e) => setNewComment(e.target.value)}
-        />
-        <button type="submit" data-testid="submit-comment">
-          评论
-        </button>
-      </form>
-
-      <AttachmentPanel
-        projectId={id}
-        issueId={issueId}
-        attachments={attachments}
-        onChanged={loadAttachments}
-      />
-      <MetadataPanel
-        projectId={id}
-        issueId={issueId}
-        entries={metadata}
-        onChanged={loadMetadata}
-      />
     </div>
   )
 }

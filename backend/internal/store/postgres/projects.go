@@ -96,7 +96,7 @@ func (s *ProjectStore) ListProjectsForUser(ctx context.Context, userID string) (
 	var list []domain.Project
 	for rows.Next() {
 		var p domain.Project
-		if err := rows.Scan(&p.ID, &p.WorkspaceID, &p.Name, &p.Description, &p.Archived, &p.CreatedBy, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.WorkspaceID, &p.Name, &p.Description, &p.Key, &p.Archived, &p.CreatedBy, &p.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
 		list = append(list, p)

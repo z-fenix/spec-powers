@@ -768,6 +768,11 @@ export function IssueDetailPage() {
             <SubtaskTree projectId={id} parentId={issueId} reloadKey={1} />
 
             <div className="detail-section">
+              <h3>时间线</h3>
+              <TimelinePanel projectId={id} issueId={issueId} />
+            </div>
+
+            <div className="detail-section">
               <WorkflowProgress issueId={issueId} />
               <ArtifactViewer issueId={issueId} />
             </div>

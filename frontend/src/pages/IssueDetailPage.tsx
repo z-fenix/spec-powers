@@ -35,7 +35,6 @@ import {
 import { StatusIcon } from '../components/StatusIcon'
 import { WorkflowProgress } from '../components/WorkflowProgress'
 import { ArtifactViewer } from '../components/ArtifactViewer'
-import { MentionText } from '../components/MentionText'
 import { MentionInput, type MentionCandidate } from '../components/MentionInput'
 import { renderMarkdown } from '../lib/markdown'
 
@@ -702,6 +701,7 @@ export function IssueDetailPage() {
                     comment={c}
                     replies={repliesOf(c.id)}
                     onReply={onReply}
+                    candidates={candidates}
                   />
                 ))}
               </div>
@@ -765,6 +765,11 @@ export function IssueDetailPage() {
             )}
           </div>
 
+          <div>
+            <p className="section-title">变更记录</p>
+            <TimelinePanel projectId={id} issueId={issueId} />
+          </div>
+
           <AttachmentPanel
             projectId={id}
             issueId={issueId}
@@ -784,41 +789,6 @@ export function IssueDetailPage() {
 
       <WorkflowProgress issueId={issueId} />
       <ArtifactViewer issueId={issueId} />
-
-      <h3>评论</h3>
-      {roots.map((c) => (
-        <CommentThread
-          key={c.id}
-          comment={c}
-          replies={repliesOf(c.id)}
-          onReply={onReply}
-        />
-      ))}
-      <form onSubmit={onSubmitComment} className="inline-form">
-        <input
-          data-testid="new-comment"
-          placeholder="写评论…"
-          value={newComment}
-          onChange={(e) => setNewComment(e.target.value)}
-        />
-        <button type="submit" data-testid="submit-comment">
-          评论
-        </button>
-      </form>
-
-      <AttachmentPanel
-        projectId={id}
-        issueId={issueId}
-        attachments={attachments}
-        onChanged={loadAttachments}
-      />
-      <MetadataPanel
-        projectId={id}
-        issueId={issueId}
-        entries={metadata}
-        onChanged={loadMetadata}
-      />
-    </section>
     </div>
   )
 }

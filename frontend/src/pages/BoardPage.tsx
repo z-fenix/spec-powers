@@ -11,6 +11,13 @@ import { getChangeByIssue, listArtifacts, type Artifact } from '../api/workflow'
 import { getRun, type RunLog } from '../api/runs'
 import { ApiError } from '../api/client'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
+import {
+  decodeMultiSelect,
+  listProjectIssueProperties,
+  listPropertyDefinitions,
+  type IssuePropertyValue,
+  type PropertyDefinition,
+} from '../api/properties'
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError || err instanceof Error ? err.message : fallback
@@ -173,6 +180,9 @@ export function BoardPage() {
   const [view, setView] = useState<'board' | 'list'>('board')
   const [statusFilter, setStatusFilter] = useState('')
   const [stageFilter, setStageFilter] = useState('')
+  const [propertyDefs, setPropertyDefs] = useState<PropertyDefinition[]>([])
+  const [propertyValues, setPropertyValues] = useState<IssuePropertyValue[]>([])
+  const [propertyFilter, setPropertyFilter] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -192,7 +202,19 @@ export function BoardPage() {
     setIssues(null)
     setError('')
     load()
-  }, [load])
+    listPropertyDefinitions(id)
+      .then((defs) => {
+        setPropertyDefs(defs)
+        if (defs.some((d) => d.type === 'select')) {
+          return listProjectIssueProperties(id).then(setPropertyValues)
+        }
+        return undefined
+      })
+      .catch(() => {
+        setPropertyDefs([])
+        setPropertyValues([])
+      })
+  }, [load, id])
 
   const onFilter = (status: string, stage: string) => {
     setStatusFilter(status)
@@ -268,7 +290,21 @@ export function BoardPage() {
       .catch((err) => setError(errorMessage(err, '创建失败')))
   }
 
-  const visible = issues ?? []
+  const allIssues = issues ?? []
+  const selectDefs = propertyDefs.filter((d) => d.type === 'select')
+  const visible = (() => {
+    if (!propertyFilter) return allIssues
+    const idx = propertyFilter.indexOf('|')
+    const propId = propertyFilter.slice(0, idx)
+    const option = propertyFilter.slice(idx + 1)
+    const byIssue = new Map(propertyValues.map((v) => [v.issue_id, v]))
+    return allIssues.filter((i) => {
+      const v = byIssue.get(i.id)
+      if (!v || v.property_id !== propId) return false
+      if (v.value.startsWith('[')) return decodeMultiSelect(v.value).includes(option)
+      return v.value === option
+    })
+  })()
   const byStage = (stage: number) => visible.filter((i) => i.stage === stage)
 
   return (
@@ -302,6 +338,25 @@ export function BoardPage() {
           value={stageFilter}
           onChange={(e) => onFilter(statusFilter, e.target.value)}
         />
+        {selectDefs.length > 0 && (
+          <select
+            aria-label="属性筛选"
+            data-testid="filter-property"
+            value={propertyFilter}
+            onChange={(e) => setPropertyFilter(e.target.value)}
+          >
+            <option value="">全部属性</option>
+            {selectDefs.map((d) => (
+              <optgroup key={d.id} label={d.name}>
+                {d.options.map((o) => (
+                  <option key={o} value={`${d.id}|${o}`}>
+                    {`${d.name}: ${o}`}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        )}
         <button data-testid="view-board" onClick={() => setView('board')}>
           看板
         </button>

@@ -4,10 +4,21 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { ProjectDetailPage } from './ProjectDetailPage'
 import { apiFetch, ApiError } from '../api/client'
+import * as propertiesApi from '../api/properties'
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
   return { ...actual, apiFetch: vi.fn() }
+})
+
+vi.mock('../api/properties', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/properties')>()
+  return {
+    ...actual,
+    listPropertyDefinitions: vi.fn(),
+    createPropertyDefinition: vi.fn(),
+    deletePropertyDefinition: vi.fn(),
+  }
 })
 
 const mockedFetch = vi.mocked(apiFetch)
@@ -43,6 +54,7 @@ function mockInitialLoad() {
 beforeEach(() => {
   vi.clearAllMocks()
   mockedFetch.mockReset()
+  vi.mocked(propertiesApi.listPropertyDefinitions).mockResolvedValue([])
 })
 
 describe('ProjectDetailPage', () => {
@@ -142,5 +154,89 @@ describe('ProjectDetailPage', () => {
     await userEvent.click(screen.getByTestId('add-resource'))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('invalid github_repo pointer')
+  })
+
+  it('creates a select property definition', async () => {
+    mockInitialLoad()
+    vi.mocked(propertiesApi.listPropertyDefinitions)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'prop1',
+          project_id: 'p1',
+          name: '模块',
+          type: 'select',
+          options: ['前端', '后端'],
+          position: 0,
+        },
+      ])
+    vi.mocked(propertiesApi.createPropertyDefinition).mockResolvedValue({
+      id: 'prop1',
+      project_id: 'p1',
+      name: '模块',
+      type: 'select',
+      options: ['前端', '后端'],
+      position: 0,
+    })
+    renderPage()
+
+    await userEvent.type(await screen.findByTestId('property-name'), '模块')
+    await userEvent.selectOptions(screen.getByTestId('property-type'), 'select')
+    await userEvent.type(screen.getByTestId('property-options'), '前端, 后端')
+    await userEvent.click(screen.getByTestId('add-property'))
+
+    expect(propertiesApi.createPropertyDefinition).toHaveBeenCalledWith('p1', {
+      name: '模块',
+      type: 'select',
+      options: ['前端', '后端'],
+    })
+    expect(await screen.findByTestId('property-def-prop1')).toBeInTheDocument()
+    expect(screen.getByText(/前端 \/ 后端/)).toBeInTheDocument()
+  })
+
+  it('sends no options for a text property', async () => {
+    mockInitialLoad()
+    vi.mocked(propertiesApi.createPropertyDefinition).mockResolvedValue({
+      id: 'prop2',
+      project_id: 'p1',
+      name: '备注',
+      type: 'text',
+      options: [],
+      position: 1,
+    })
+    renderPage()
+
+    await userEvent.type(await screen.findByTestId('property-name'), '备注')
+    await userEvent.selectOptions(screen.getByTestId('property-type'), 'text')
+    await userEvent.click(screen.getByTestId('add-property'))
+
+    expect(propertiesApi.createPropertyDefinition).toHaveBeenCalledWith('p1', {
+      name: '备注',
+      type: 'text',
+      options: undefined,
+    })
+  })
+
+  it('deletes a property definition', async () => {
+    mockInitialLoad()
+    vi.mocked(propertiesApi.listPropertyDefinitions).mockResolvedValue([
+      {
+        id: 'prop1',
+        project_id: 'p1',
+        name: '模块',
+        type: 'select',
+        options: ['前端'],
+        position: 0,
+      },
+    ])
+    vi.mocked(propertiesApi.deletePropertyDefinition).mockResolvedValue(undefined)
+    renderPage()
+
+    await userEvent.click(await screen.findByTestId('delete-property-prop1'))
+
+    expect(propertiesApi.deletePropertyDefinition).toHaveBeenCalledWith('p1', 'prop1')
+    await vi.waitFor(() => {
+      expect(propertiesApi.listPropertyDefinitions).toHaveBeenCalledTimes(2)
+    })
   })
 })

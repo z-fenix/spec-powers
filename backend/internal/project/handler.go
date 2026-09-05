@@ -17,10 +17,20 @@ type Handler struct {
 	// issues is the issue-domain subrouter mounted under
 	// /{projectID}/issues; nil in tests that don't exercise issues.
 	issues http.Handler
+	// properties is the property-definition subrouter mounted under
+	// /{projectID}/properties; nil in tests that don't exercise properties.
+	properties http.Handler
 }
 
 func NewHandler(svc *Service, tokens *auth.TokenService, issues http.Handler) *Handler {
 	return &Handler{svc: svc, tokens: tokens, issues: issues}
+}
+
+// WithProperties attaches the property-definition subrouter served under
+// /{projectID}/properties.
+func (h *Handler) WithProperties(p http.Handler) *Handler {
+	h.properties = p
+	return h
 }
 
 type projectDTO struct {
@@ -84,6 +94,9 @@ func (h *Handler) Routes() http.Handler {
 			r.Get("/context", h.getContext)
 			if h.issues != nil {
 				r.Mount("/issues", h.issues)
+			}
+			if h.properties != nil {
+				r.Mount("/properties", h.properties)
 			}
 			r.Group(func(r chi.Router) {
 				r.Use(h.requireRole("owner"))

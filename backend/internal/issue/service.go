@@ -166,6 +166,11 @@ func (s *Service) CreateIssue(ctx context.Context, userID, projectID string, in 
 	if err != nil {
 		return nil, httpapi.ErrInternal("create issue failed")
 	}
+	if s.trigger != nil && in.AssigneeID != "" {
+		if err := s.trigger.OnIssueAssigned(ctx, created); err != nil {
+			return nil, httpapi.ErrInternal("notify assignment failed")
+		}
+	}
 	return created, nil
 }
 

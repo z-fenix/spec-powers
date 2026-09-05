@@ -108,6 +108,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	mentionTrigger := agent.NewMentionTrigger(agents, runs)
 	collabSvc := collab.NewService(issues, projects, comments, attachments, metadata, cfg.AttachmentDir).
 		WithNotifier(notificationSvc).
+		WithUserDirectory(users).
 		WithCommentObserver(func(ctx context.Context, c *domain.IssueComment) {
 			if err := mentionTrigger.OnComment(ctx, c.IssueID, c.AuthorID, c.Content); err != nil {
 				log.Printf("agent mention trigger: %v", err)
@@ -190,6 +191,10 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	agentHandler := agent.NewHandler(agentSvc, queue, runs, runLogs, issues, tokens, runtimeTokens)
 	workerCtx, stopWorker := context.WithCancel(context.Background())
 	go queue.Loop(workerCtx)
+	// Due-date notifications: periodic scan writing "due" notices for human
+	// assignees when deadlines approach or pass; shares the worker lifetime.
+	dueScanner := notification.NewDueScanner(issues, agents, notificationStore, notificationSvc)
+	go dueScanner.Loop(workerCtx, time.Minute)
 	runtimeHandler := agent.NewRuntimeHandler(agent.RuntimeHandlerDeps{
 		Agents:      agents,
 		Runs:        runs,

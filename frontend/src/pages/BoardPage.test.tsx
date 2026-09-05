@@ -34,6 +34,21 @@ vi.mock('../api/runs', async (importOriginal) => {
   }
 })
 
+vi.mock('../api/properties', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/properties')>()
+  return {
+    ...actual,
+    listPropertyDefinitions: vi.fn(),
+    listProjectIssueProperties: vi.fn(),
+  }
+})
+
+import {
+  listPropertyDefinitions,
+  listProjectIssueProperties,
+} from '../api/properties'
+import type { PropertyDefinition } from '../api/properties'
+
 import { getChangeByIssue, listArtifacts } from '../api/workflow'
 import type { Change, Artifact } from '../api/workflow'
 import { getRun } from '../api/runs'
@@ -133,7 +148,21 @@ function renderPage() {
 beforeEach(() => {
   vi.clearAllMocks()
   mocked.listIssues.mockResolvedValue([])
+  vi.mocked(listPropertyDefinitions).mockResolvedValue([])
+  vi.mocked(listProjectIssueProperties).mockResolvedValue([])
 })
+
+function makeDef(overrides: Partial<PropertyDefinition> = {}): PropertyDefinition {
+  return {
+    id: 'prop1',
+    project_id: 'p1',
+    name: '模块',
+    type: 'select',
+    options: ['前端', '后端'],
+    position: 0,
+    ...overrides,
+  }
+}
 
 describe('BoardPage', () => {
   it('renders kanban columns by status and places cards in the right column', async () => {
@@ -319,6 +348,50 @@ describe('BoardPage', () => {
     expect(await screen.findByTestId('artifacts-empty-a')).toBeInTheDocument()
   })
 
+  it('hides the property filter when the project has no select properties', async () => {
+    vi.mocked(listPropertyDefinitions).mockResolvedValue([
+      makeDef({ id: 'prop2', name: '备注', type: 'text', options: [] }),
+    ])
+    renderPage()
+
+    await screen.findByTestId('board')
+
+    expect(screen.queryByTestId('filter-property')).not.toBeInTheDocument()
+  })
+
+  it('filters the board by a select property', async () => {
+    vi.mocked(listPropertyDefinitions).mockResolvedValue([makeDef()])
+    vi.mocked(listProjectIssueProperties).mockResolvedValue([
+      { issue_id: 'a', property_id: 'prop1', value: '前端' },
+      { issue_id: 'b', property_id: 'prop1', value: '后端' },
+    ])
+    mocked.listIssues.mockResolvedValue([
+      makeIssue({ id: 'a', title: '前端卡', status: 'todo' }),
+      makeIssue({ id: 'b', title: '后端卡', status: 'todo' }),
+    ])
+    renderPage()
+
+    const filter = await screen.findByTestId('filter-property')
+    await userEvent.selectOptions(filter, 'prop1|后端')
+
+    expect(screen.queryByTestId('card-a')).not.toBeInTheDocument()
+    expect(screen.getByTestId('card-b')).toBeInTheDocument()
+
+    await userEvent.selectOptions(filter, '')
+
+    expect(screen.getByTestId('card-a')).toBeInTheDocument()
+    expect(screen.getByTestId('card-b')).toBeInTheDocument()
+  })
+
+  it('hides the property filter for multi_select-only definitions', async () => {
+    vi.mocked(listPropertyDefinitions).mockResolvedValue([
+      makeDef({ id: 'prop3', name: '标签', type: 'multi_select', options: ['x', 'y'] }),
+    ])
+    renderPage()
+
+    await screen.findByTestId('board')
+
+    expect(screen.queryByTestId('filter-property')).not.toBeInTheDocument()
   it('searches issues by keyword', async () => {
     mocked.listIssues.mockResolvedValue([makeIssue({ id: 'a', title: 'card a' })])
     renderPage()

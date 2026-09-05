@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   addComment,
@@ -24,9 +24,19 @@ import { listAgents } from '../api/agents'
 import { listIssuePullRequests, type PullRequest } from '../api/pullrequests'
 import { ApiError } from '../api/client'
 import { STATUSES, STATUS_LABELS } from '../lib/status'
+import {
+  decodeMultiSelect,
+  encodeMultiSelect,
+  listIssueProperties,
+  listPropertyDefinitions,
+  setIssueProperty,
+  type IssuePropertyValue,
+  type PropertyDefinition,
+} from '../api/properties'
 import { StatusIcon } from '../components/StatusIcon'
 import { WorkflowProgress } from '../components/WorkflowProgress'
 import { ArtifactViewer } from '../components/ArtifactViewer'
+import { IssueUsagePanel } from '../components/Usage'
 import { MentionText } from '../components/MentionText'
 import { MentionInput, type MentionCandidate } from '../components/MentionInput'
 import { renderMarkdown } from '../lib/markdown'
@@ -306,6 +316,182 @@ function MetadataPanel({
   )
 }
 
+function PropertyValueEditor({
+  projectId,
+  issueId,
+  def,
+  value,
+  onChanged,
+}: {
+  projectId: string
+  issueId: string
+  def: PropertyDefinition
+  value: string
+  onChanged: () => void
+}) {
+  const [error, setError] = useState('')
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+
+  const save = (v: string) => {
+    setError('')
+    setIssueProperty(projectId, issueId, def.id, v)
+      .then(onChanged)
+      .catch((err) => setError(errorMessage(err, '保存属性失败')))
+  }
+
+  const testId = `property-input-${def.id}`
+  let editor: ReactNode
+  switch (def.type) {
+    case 'select':
+      editor = (
+        <select
+          data-testid={testId}
+          value={value}
+          onChange={(e) => save(e.target.value)}
+        >
+          <option value="">未设置</option>
+          {def.options.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      )
+      break
+    case 'multi_select': {
+      const picked = decodeMultiSelect(value)
+      const toggle = (o: string, on: boolean) => {
+        const next = on ? [...picked, o] : picked.filter((v) => v !== o)
+        save(encodeMultiSelect(next))
+      }
+      editor = (
+        <span data-testid={testId}>
+          {def.options.map((o) => (
+            <label key={o}>
+              <input
+                type="checkbox"
+                checked={picked.includes(o)}
+                onChange={(e) => toggle(o, e.target.checked)}
+              />{' '}
+              {o}
+            </label>
+          ))}
+        </span>
+      )
+      break
+    }
+    case 'checkbox':
+      editor = (
+        <input
+          data-testid={testId}
+          type="checkbox"
+          checked={value === 'true'}
+          onChange={(e) => save(e.target.checked ? 'true' : 'false')}
+        />
+      )
+      break
+    case 'number':
+      editor = (
+        <input
+          data-testid={testId}
+          type="number"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => draft !== value && save(draft)}
+        />
+      )
+      break
+    case 'date':
+      editor = (
+        <input
+          data-testid={testId}
+          type="date"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => draft !== value && save(draft)}
+        />
+      )
+      break
+    default:
+      editor = (
+        <input
+          data-testid={testId}
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => draft !== value && save(draft)}
+        />
+      )
+  }
+
+  return (
+    <li data-testid={`property-row-${def.id}`}>
+      <strong>{def.name}</strong>{' '}
+      <span className="badge">{def.type}</span> {editor}
+      {error && <span role="alert"> {error}</span>}
+    </li>
+  )
+}
+
+function PropertyValuesPanel({
+  projectId,
+  issueId,
+}: {
+  projectId: string
+  issueId: string
+}) {
+  const [defs, setDefs] = useState<PropertyDefinition[] | null>(null)
+  const [values, setValues] = useState<IssuePropertyValue[] | null>(null)
+
+  const loadValues = useCallback(
+    () =>
+      listIssueProperties(projectId, issueId)
+        .then(setValues)
+        .catch(() => setValues([])),
+    [projectId, issueId],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    listPropertyDefinitions(projectId)
+      .then((list) => {
+        if (!cancelled) setDefs(list ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setDefs([])
+      })
+    loadValues()
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, issueId, loadValues])
+
+  if (defs !== null && defs.length === 0) return null
+  if (defs === null || values === null) return null
+
+  const valueOf = (propertyId: string) =>
+    values.find((v) => v.property_id === propertyId)?.value ?? ''
+
+  return (
+    <div data-testid="property-panel">
+      <h3>属性</h3>
+      <ul>
+        {defs.map((d) => (
+          <PropertyValueEditor
+            key={d.id}
+            projectId={projectId}
+            issueId={issueId}
+            def={d}
+            value={valueOf(d.id)}
+            onChanged={loadValues}
+          />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function AttachmentPanel({
   projectId,
   issueId,
@@ -560,6 +746,10 @@ export function IssueDetailPage() {
             </div>
 
             <div className="detail-section">
+              <IssueUsagePanel issueId={issueId} />
+            </div>
+
+            <div className="detail-section">
               <h3>评论</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {roots.map((c) => (
@@ -646,6 +836,8 @@ export function IssueDetailPage() {
           />
         </aside>
       </div>
+
+      <PropertyValuesPanel projectId={id} issueId={issueId} />
     </div>
   )
 }

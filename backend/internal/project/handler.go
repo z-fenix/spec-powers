@@ -20,6 +20,9 @@ type Handler struct {
 	// pullRequests is the PR subrouter mounted under
 	// /{projectID}/pullrequests; nil in tests that don't exercise PRs.
 	pullRequests http.Handler
+	// properties is the property-definition subrouter mounted under
+	// /{projectID}/properties; nil in tests that don't exercise properties.
+	properties http.Handler
 }
 
 func NewHandler(svc *Service, tokens *auth.TokenService, issues http.Handler) *Handler {
@@ -30,6 +33,13 @@ func NewHandler(svc *Service, tokens *auth.TokenService, issues http.Handler) *H
 // /{projectID}/pullrequests.
 func (h *Handler) WithPullRequests(p http.Handler) *Handler {
 	h.pullRequests = p
+	return h
+}
+
+// WithProperties attaches the property-definition subrouter served under
+// /{projectID}/properties.
+func (h *Handler) WithProperties(p http.Handler) *Handler {
+	h.properties = p
 	return h
 }
 
@@ -98,6 +108,9 @@ func (h *Handler) Routes() http.Handler {
 			}
 			if h.pullRequests != nil {
 				r.Mount("/pullrequests", h.pullRequests)
+			}
+			if h.properties != nil {
+				r.Mount("/properties", h.properties)
 			}
 			r.Group(func(r chi.Router) {
 				r.Use(h.requireRole("owner"))

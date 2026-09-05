@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"specpowers/backend/internal/config"
+	"specpowers/backend/internal/llm"
 	"specpowers/backend/internal/server"
 )
 
@@ -21,22 +22,22 @@ import (
 // a tasks JSON block with two staged sub-issues.
 type splitLLM struct{ calls int }
 
-func (s *splitLLM) Complete(_ context.Context, _, _ string) (string, error) {
+func (s *splitLLM) Complete(_ context.Context, _, _ string) (llm.Completion, error) {
 	s.calls++
 	switch s.calls {
 	case 1:
-		return "# Proposal", nil
+		return llm.Completion{Text: "# Proposal"}, nil
 	case 2:
-		return "# Specs", nil
+		return llm.Completion{Text: "# Specs"}, nil
 	case 3:
-		return "# Design", nil
+		return llm.Completion{Text: "# Design"}, nil
 	case 4:
-		return "```json\n{\"tasks\":[" +
+		return llm.Completion{Text: "```json\n{\"tasks\":[" +
 			`{"title":"Stage 1 task","description":"do first","stage":1},` +
 			`{"title":"Stage 2 task","description":"do next","stage":2}` +
-			"]}\n```", nil
+			"]}\n```"}, nil
 	default:
-		return "", fmt.Errorf("unexpected LLM call %d", s.calls)
+		return llm.Completion{}, fmt.Errorf("unexpected LLM call %d", s.calls)
 	}
 }
 

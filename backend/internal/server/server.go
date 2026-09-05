@@ -24,6 +24,7 @@ import (
 	"specpowers/backend/internal/notification"
 	"specpowers/backend/internal/pr"
 	"specpowers/backend/internal/project"
+	"specpowers/backend/internal/property"
 	"specpowers/backend/internal/skill"
 	"specpowers/backend/internal/store/postgres"
 	"specpowers/backend/internal/workflow"
@@ -93,6 +94,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	comments := postgres.NewCommentStore(pool)
 	attachments := postgres.NewAttachmentStore(pool)
 	metadata := postgres.NewIssueMetadataStore(pool)
+	properties := postgres.NewPropertyStore(pool)
 	changes := postgres.NewChangeStore(pool)
 	artifacts := postgres.NewArtifactStore(pool)
 	taskMappings := postgres.NewTaskMappingStore(pool)
@@ -123,12 +125,15 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	prHandler := pr.NewHandler(prService, tokens)
 	issueHandler := issue.NewHandler(issueService, tokens).WithCollab(
 		collab.NewHandler(collabSvc, tokens).Routes(),
-	).WithPullRequests(prHandler.IssueRoutes())
+	).WithPullRequests(prHandler.IssueRoutes()).WithProperties(
+		property.NewHandler(property.NewService(properties, projects, issues), tokens).ValueRoutes(),
+	)
+	propertyHandler := property.NewHandler(property.NewService(properties, projects, issues), tokens)
 	projectHandler := project.NewHandler(
 		project.NewService(projects, users, members, workspaces),
 		tokens,
 		issueHandler.Routes(),
-	).WithPullRequests(prHandler.Routes())
+	).WithPullRequests(prHandler.Routes()).WithProperties(propertyHandler.DefinitionRoutes())
 	workflowService := workflow.NewService(changes, artifacts, taskMappings, issues, projects)
 	workflowService = workflowService.WithWaker(issues)
 	runTrigger := agent.NewTrigger(agents, runs)
@@ -187,6 +192,7 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 		Skills:      skillRegistry,
 		WorkDir:     cfg.AgentWorkDir,
 		Logs:        runLogs,
+		Usage:       runs,
 		Flow:        agent.NewWorkflowFlow(workflowService),
 		MentionHook: mentionTrigger.OnComment,
 	})

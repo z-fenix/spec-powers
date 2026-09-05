@@ -27,6 +27,10 @@ type fakeLLM struct {
 	responses []string // consumed in order; the last one repeats
 	requests  []llmRequest
 	err       error
+	// usage returned with every completion; zeros make the executor skip
+	// recording.
+	promptTokens     int64
+	completionTokens int64
 }
 
 type llmRequest struct {
@@ -34,19 +38,19 @@ type llmRequest struct {
 	user   string
 }
 
-func (f *fakeLLM) Complete(_ context.Context, system, user string) (string, error) {
+func (f *fakeLLM) Complete(_ context.Context, system, user string) (llm.Completion, error) {
 	if f.err != nil {
-		return "", f.err
+		return llm.Completion{}, f.err
 	}
 	f.requests = append(f.requests, llmRequest{system: system, user: user})
 	if len(f.responses) == 0 {
-		return "", fmt.Errorf("fakeLLM: no scripted responses")
+		return llm.Completion{}, fmt.Errorf("fakeLLM: no scripted responses")
 	}
 	resp := f.responses[0]
 	if len(f.responses) > 1 {
 		f.responses = f.responses[1:]
 	}
-	return resp, nil
+	return llm.Completion{Text: resp, PromptTokens: f.promptTokens, CompletionTokens: f.completionTokens}, nil
 }
 
 type fakeIssueStore struct {

@@ -788,44 +788,6 @@ export function IssueDetailPage() {
       </div>
 
       <PropertyValuesPanel projectId={id} issueId={issueId} />
-
-      <WorkflowProgress issueId={issueId} />
-      <ArtifactViewer issueId={issueId} />
-
-      <h3>评论</h3>
-      {roots.map((c) => (
-        <CommentThread
-          key={c.id}
-          comment={c}
-          replies={repliesOf(c.id)}
-          onReply={onReply}
-        />
-      ))}
-      <form onSubmit={onSubmitComment} className="inline-form">
-        <input
-          data-testid="new-comment"
-          placeholder="写评论…"
-          value={newComment}
-          onChange={(e) => setNewComment(e.target.value)}
-        />
-        <button type="submit" data-testid="submit-comment">
-          评论
-        </button>
-      </form>
-
-      <AttachmentPanel
-        projectId={id}
-        issueId={issueId}
-        attachments={attachments}
-        onChanged={loadAttachments}
-      />
-      <MetadataPanel
-        projectId={id}
-        issueId={issueId}
-        entries={metadata}
-        onChanged={loadMetadata}
-      />
-    </section>
     </div>
   )
 }

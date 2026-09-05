@@ -331,64 +331,6 @@ export function BoardPage() {
   const byStage = (stage: number) => visible.filter((i) => i.stage === stage)
 
   return (
-    <section data-testid="board">
-      <h2>Issue 看板</h2>
-      {error && (
-        <p role="alert" data-testid="board-error">
-          {error}
-        </p>
-      )}
-      <div className="board-toolbar">
-        <select
-          aria-label="状态筛选"
-          data-testid="filter-status"
-          value={statusFilter}
-          onChange={(e) => onFilter(e.target.value, stageFilter)}
-        >
-          <option value="">全部状态</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABELS[s]}
-            </option>
-          ))}
-        </select>
-        <input
-          aria-label="Stage 筛选"
-          data-testid="filter-stage"
-          type="number"
-          min={0}
-          placeholder="Stage"
-          value={stageFilter}
-          onChange={(e) => onFilter(statusFilter, e.target.value)}
-        />
-        {selectDefs.length > 0 && (
-          <select
-            aria-label="属性筛选"
-            data-testid="filter-property"
-            value={propertyFilter}
-            onChange={(e) => setPropertyFilter(e.target.value)}
-          >
-            <option value="">全部属性</option>
-            {selectDefs.map((d) => (
-              <optgroup key={d.id} label={d.name}>
-                {d.options.map((o) => (
-                  <option key={o} value={`${d.id}|${o}`}>
-                    {`${d.name}: ${o}`}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        )}
-        <button data-testid="view-board" onClick={() => setView('board')}>
-          看板
-        </button>
-        <button data-testid="view-list" onClick={() => setView('list')}>
-          列表
-        </button>
-        <button data-testid="toggle-create" onClick={() => setShowCreate((v) => !v)}>
-          新建 Issue
-        </button>
     <div className="page" data-testid="board">
       <div className="page-header">
         <h1 className="page-title">Issue 看板</h1>
@@ -424,6 +366,25 @@ export function BoardPage() {
             value={stageFilter}
             onChange={(e) => onFilter(statusFilter, e.target.value)}
           />
+          {selectDefs.length > 0 && (
+            <select
+              aria-label="属性筛选"
+              data-testid="filter-property"
+              value={propertyFilter}
+              onChange={(e) => setPropertyFilter(e.target.value)}
+            >
+              <option value="">全部属性</option>
+              {selectDefs.map((d) => (
+                <optgroup key={d.id} label={d.name}>
+                  {d.options.map((o) => (
+                    <option key={o} value={`${d.id}|${o}`}>
+                      {`${d.name}: ${o}`}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          )}
           <form onSubmit={onSearch} data-testid="board-search">
             <input
               className="input"

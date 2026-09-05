@@ -15,6 +15,8 @@ vi.mock('../api/client', async (importOriginal) => {
 vi.mock('../api/runs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/runs')>()
   return { ...actual, getProjectUsage: vi.fn() }
+})
+
 vi.mock('../api/properties', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/properties')>()
   return {

@@ -128,6 +128,15 @@ type IssueMetadata struct {
 	UpdatedAt time.Time
 }
 
+// IssueSubscriber is a user watching an issue. Subscribers are notified on
+// comments, status changes and run completions; an issue's creator is
+// subscribed automatically.
+type IssueSubscriber struct {
+	IssueID   string
+	UserID    string
+	CreatedAt time.Time
+}
+
 // Change is a workflow instance: the classic split flow (proposal → specs →
 // design → tasks) running for one parent issue. Phase is the flow's current
 // step; Status is "active" until the change is archived.

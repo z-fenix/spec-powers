@@ -98,16 +98,20 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 	agents := postgres.NewAgentStore(pool)
 	runs := postgres.NewRunStore(pool)
 	runLogs := postgres.NewRunLogStore(pool)
+	subscribers := postgres.NewIssueSubscriberStore(pool)
 
 	tokens := auth.NewTokenService(cfg.JWTSecret, 24*time.Hour)
 	notificationStore := postgres.NewNotificationStore(pool)
 	notificationSvc := notification.NewService(notificationStore)
 	authHandler := auth.NewHandler(auth.NewService(users, workspaces, members, tokens))
-	issueService := issue.NewService(issues, projects, users)
+	issueService := issue.NewService(issues, projects, users).
+		WithSubscribers(subscribers).
+		WithNotifier(notificationSvc)
 	// Mention auto-claim: comments mentioning an agent enqueue its run.
 	mentionTrigger := agent.NewMentionTrigger(agents, runs)
 	collabSvc := collab.NewService(issues, projects, comments, attachments, metadata, cfg.AttachmentDir).
 		WithNotifier(notificationSvc).
+		WithSubscribers(subscribers, users).
 		WithCommentObserver(func(ctx context.Context, c *domain.IssueComment) {
 			if err := mentionTrigger.OnComment(ctx, c.IssueID, c.AuthorID, c.Content); err != nil {
 				log.Printf("agent mention trigger: %v", err)
@@ -182,7 +186,9 @@ func Build(ctx context.Context, cfg config.Config, opt Options) (*Server, error)
 		Flow:        agent.NewWorkflowFlow(workflowService),
 		MentionHook: mentionTrigger.OnComment,
 	})
-	queue := agent.NewQueue(runs, runLogs, agents, executor).WithNotifier(notificationSvc, issues)
+	queue := agent.NewQueue(runs, runLogs, agents, executor).
+		WithNotifier(notificationSvc, issues).
+		WithSubscribers(subscribers)
 	issueService = issueService.WithRunTrigger(runTrigger.WithNotifier(notificationSvc))
 	// Long-lived credentials for locally registered agent runtimes (sp agent
 	// register). Revocation is deleting the agent.

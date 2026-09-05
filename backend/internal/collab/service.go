@@ -36,12 +36,19 @@ type projectAccess interface {
 	GetProjectMember(ctx context.Context, projectID, userID string) (*domain.ProjectMember, error)
 }
 
+// userLookup resolves subscriber candidates from an email address.
+type userLookup interface {
+	GetUserByEmail(ctx context.Context, email string) (*domain.User, error)
+}
+
 type Service struct {
 	issues      issueLookup
 	projects    projectAccess
 	comments    store.CommentStore
 	attachments store.AttachmentStore
 	metadata    store.IssueMetadataStore
+	subscribers store.SubscriberStore
+	users       userLookup
 	notifier    notification.Sink
 	// commentObserver is called after every created comment (roots and
 	// replies); used by the agent runtime to claim @-mentions. Observer
@@ -68,9 +75,17 @@ func NewService(issues issueLookup, projects projectAccess, comments store.Comme
 }
 
 // WithNotifier attaches a notification sink; comment creation then notifies
-// the issue's assignee (unless the author is the assignee themself).
+// the issue's subscribers and assignee (unless the author is among them).
 func (s *Service) WithNotifier(n notification.Sink) *Service {
 	s.notifier = n
+	return s
+}
+
+// WithSubscribers attaches the subscriber store and the user lookup used to
+// resolve subscriber emails; subscriber management endpoints become active.
+func (s *Service) WithSubscribers(subs store.SubscriberStore, users userLookup) *Service {
+	s.subscribers = subs
+	s.users = users
 	return s
 }
 
@@ -155,18 +170,30 @@ func (s *Service) AddComment(ctx context.Context, userID, issueID, parentComment
 	return c, nil
 }
 
-// notifyComment tells the issue's assignee about a new comment; self-comments
-// stay silent.
+// notifyComment tells the issue's subscribers and assignee about a new
+// comment; the author never receives one and duplicates are dropped.
 func (s *Service) notifyComment(ctx context.Context, i *domain.Issue, authorID, content string) {
-	if s.notifier == nil || i.AssigneeID == "" || i.AssigneeID == authorID {
+	if s.notifier == nil {
 		return
 	}
 	body := content
 	if len(body) > 200 {
 		body = body[:200] + "…"
 	}
-	s.notifier.Notify(ctx, notification.NotifyInput{
-		UserID:    i.AssigneeID,
+	var recipients []string
+	if i.AssigneeID != "" {
+		recipients = append(recipients, i.AssigneeID)
+	}
+	if s.subscribers != nil {
+		users, err := s.subscribers.ListIssueSubscribers(ctx, i.ID)
+		if err != nil {
+			users = nil
+		}
+		for _, u := range users {
+			recipients = append(recipients, u.ID)
+		}
+	}
+	notification.NotifyMany(ctx, s.notifier, recipients, authorID, notification.NotifyInput{
 		Kind:      "comment",
 		Title:     "New comment on: " + i.Title,
 		Body:      body,
@@ -348,6 +375,54 @@ func (s *Service) DeleteMetadata(ctx context.Context, userID, issueID, key strin
 		return httpapi.ErrInternal("delete metadata failed")
 	}
 	return nil
+}
+
+// AddSubscriber subscribes the user with the given email to the issue and
+// returns the updated subscriber list. Re-adding a subscriber is idempotent.
+func (s *Service) AddSubscriber(ctx context.Context, userID, issueID, email string) ([]domain.User, error) {
+	if _, err := s.requireProjectIssue(ctx, userID, issueID); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(email) == "" {
+		return nil, httpapi.ErrInvalid("subscriber email is required")
+	}
+	u, err := s.users.GetUserByEmail(ctx, email)
+	if err == store.ErrNotFound {
+		return nil, httpapi.ErrNotFound("user not found")
+	}
+	if err != nil {
+		return nil, httpapi.ErrInternal("lookup user failed")
+	}
+	if err := s.subscribers.AddIssueSubscriber(ctx, issueID, u.ID); err != nil {
+		return nil, httpapi.ErrInternal("add subscriber failed")
+	}
+	return s.ListSubscribers(ctx, userID, issueID)
+}
+
+// RemoveSubscriber unsubscribes a user; removing a non-subscriber reports
+// not found.
+func (s *Service) RemoveSubscriber(ctx context.Context, userID, issueID, targetUserID string) error {
+	if _, err := s.requireProjectIssue(ctx, userID, issueID); err != nil {
+		return err
+	}
+	if err := s.subscribers.RemoveIssueSubscriber(ctx, issueID, targetUserID); err == store.ErrNotFound {
+		return httpapi.ErrNotFound("subscriber not found")
+	} else if err != nil {
+		return httpapi.ErrInternal("remove subscriber failed")
+	}
+	return nil
+}
+
+// ListSubscribers returns the issue's subscribers, oldest subscription first.
+func (s *Service) ListSubscribers(ctx context.Context, userID, issueID string) ([]domain.User, error) {
+	if _, err := s.requireProjectIssue(ctx, userID, issueID); err != nil {
+		return nil, err
+	}
+	list, err := s.subscribers.ListIssueSubscribers(ctx, issueID)
+	if err != nil {
+		return nil, httpapi.ErrInternal("list subscribers failed")
+	}
+	return list, nil
 }
 
 // newID returns a random RFC 4122 v4 UUID string.

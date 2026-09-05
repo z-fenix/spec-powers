@@ -30,6 +30,7 @@ type Queue struct {
 	poll      time.Duration
 	notifier  notification.Sink
 	notIssues issueAssigneeLookup
+	subs      store.SubscriberStore
 }
 
 // issueAssigneeLookup lets the queue notify the issue's assignee when a run
@@ -50,28 +51,49 @@ func (q *Queue) WithNotifier(n notification.Sink, issues issueAssigneeLookup) *Q
 	return q
 }
 
-// notifyRunFinished tells the issue's assignee that a run reached its final
-// state; issues without an assignee stay silent.
+// WithSubscribers attaches the subscriber store; finished runs then also
+// notify the issue's subscribers.
+func (q *Queue) WithSubscribers(s store.SubscriberStore) *Queue {
+	q.subs = s
+	return q
+}
+
+// notifyRunFinished tells the issue's assignee and subscribers that a run
+// reached its final state; delivery is best-effort.
 func (q *Queue) notifyRunFinished(ctx context.Context, run *domain.Run, status, errMsg string) {
 	if q.notifier == nil || q.notIssues == nil {
 		return
 	}
 	i, err := q.notIssues.GetIssue(ctx, run.IssueID)
-	if err != nil || i.AssigneeID == "" {
+	if err != nil {
 		return
 	}
 	statusLabel := "finished"
 	if status == "failed" {
 		statusLabel = "failed"
 	}
-	q.notifier.Notify(ctx, notification.NotifyInput{
-		UserID:    i.AssigneeID,
+	in := notification.NotifyInput{
 		Kind:      "run_finished",
 		Title:     "Agent run " + statusLabel + " on: " + i.Title,
 		Body:      errMsg,
 		IssueID:   i.ID,
 		ProjectID: i.ProjectID,
-	})
+	}
+	if i.AssigneeID != "" {
+		in.UserID = i.AssigneeID
+		q.notifier.Notify(ctx, in)
+	}
+	if q.subs != nil {
+		users, err := q.subs.ListIssueSubscribers(ctx, run.IssueID)
+		if err != nil {
+			return
+		}
+		ids := make([]string, 0, len(users))
+		for _, u := range users {
+			ids = append(ids, u.ID)
+		}
+		notification.NotifyMany(ctx, q.notifier, ids, i.AssigneeID, in)
+	}
 }
 
 // WithPoll overrides the worker polling interval (tests).

@@ -96,6 +96,15 @@ type IssueMetadataStore interface {
 	DeleteIssueMetadata(ctx context.Context, issueID, key string) error
 }
 
+// SubscriberStore is the per-issue subscriber list. Add is idempotent;
+// Remove reports ErrNotFound for a user that is not subscribed. List returns
+// the subscribers' user rows, oldest subscription first.
+type SubscriberStore interface {
+	AddIssueSubscriber(ctx context.Context, issueID, userID string) error
+	RemoveIssueSubscriber(ctx context.Context, issueID, userID string) error
+	ListIssueSubscribers(ctx context.Context, issueID string) ([]domain.User, error)
+}
+
 type AgentStore interface {
 	CreateAgent(ctx context.Context, a *domain.Agent) (*domain.Agent, error)
 	GetAgent(ctx context.Context, id string) (*domain.Agent, error)

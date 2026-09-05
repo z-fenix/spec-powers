@@ -249,3 +249,42 @@ export async function deleteMetadata(
     method: 'DELETE',
   })
 }
+
+export interface Subscriber {
+  user_id: string
+  display_name: string
+  email: string
+}
+
+export async function listSubscribers(
+  projectId: string,
+  issueId: string,
+): Promise<Subscriber[]> {
+  const res = await apiFetch<{ subscribers: Subscriber[] }>(
+    `${issuePath(projectId, issueId)}/subscribers`,
+  )
+  return res.subscribers ?? []
+}
+
+export async function addSubscriber(
+  projectId: string,
+  issueId: string,
+  email: string,
+): Promise<Subscriber[]> {
+  const res = await apiFetch<{ subscribers: Subscriber[] }>(
+    `${issuePath(projectId, issueId)}/subscribers`,
+    { method: 'POST', body: { email } },
+  )
+  return res.subscribers ?? []
+}
+
+export async function removeSubscriber(
+  projectId: string,
+  issueId: string,
+  userId: string,
+): Promise<void> {
+  await apiFetch<void>(
+    `${issuePath(projectId, issueId)}/subscribers/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+  )
+}

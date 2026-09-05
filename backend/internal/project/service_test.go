@@ -93,16 +93,17 @@ func (f *fakeProjects) SetProjectArchived(_ context.Context, id string, archived
 	return &clone, nil
 }
 
-func (f *fakeProjects) AddProjectResource(_ context.Context, projectID, resourceType, label, pointer string) (*domain.ProjectResource, error) {
+func (f *fakeProjects) AddProjectResource(_ context.Context, projectID string, in store.ResourceInput) (*domain.ProjectResource, error) {
 	for _, r := range f.resources[projectID] {
-		if r.Type == resourceType && r.Pointer == pointer {
+		if r.Type == in.Type && r.Pointer == in.Pointer {
 			return nil, store.ErrConflict
 		}
 	}
 	f.nextID++
 	r := domain.ProjectResource{
 		ID: fmt.Sprintf("r%d", f.nextID), ProjectID: projectID,
-		Type: resourceType, Label: label, Pointer: pointer,
+		Type: in.Type, Label: in.Label, Pointer: in.Pointer,
+		Branch: in.Branch, Path: in.Path,
 	}
 	f.resources[projectID] = append(f.resources[projectID], r)
 	return &r, nil
@@ -412,7 +413,7 @@ func TestAddResourceValidatesInput(t *testing.T) {
 		{"local traversal", "local_directory", "d", "/etc/../secret"},
 	}
 	for _, tc := range cases {
-		_, err := svc.AddResource(context.Background(), "u1", p.ID, tc.rType, tc.label, tc.pointer)
+		_, err := svc.AddResource(context.Background(), "u1", p.ID, AddResourceInput{Type: tc.rType, Label: tc.label, Pointer: tc.pointer})
 		if !errors.As(err, &appErr) || appErr.Status != 400 {
 			t.Errorf("%s: error = %v, want 400", tc.name, err)
 		}
@@ -427,7 +428,7 @@ func TestAddResourceValidatesInput(t *testing.T) {
 		{"local_directory", `\\server\share`},
 	}
 	for _, tc := range valid {
-		if _, err := svc.AddResource(context.Background(), "u1", p.ID, tc.rType, "ok", tc.pointer); err != nil {
+		if _, err := svc.AddResource(context.Background(), "u1", p.ID, AddResourceInput{Type: tc.rType, Label: "ok", Pointer: tc.pointer}); err != nil {
 			t.Errorf("valid %s %s rejected: %v", tc.rType, tc.pointer, err)
 		}
 	}
@@ -441,14 +442,14 @@ func TestAddResourceOwnerOnlyAndDuplicateConflict(t *testing.T) {
 	}
 
 	var appErr *httpapi.AppError
-	if _, err := svc.AddResource(context.Background(), "mate", p.ID, "github_repo", "r", "a/b"); !errors.As(err, &appErr) || appErr.Status != 403 {
+	if _, err := svc.AddResource(context.Background(), "mate", p.ID, AddResourceInput{Type: "github_repo", Label: "r", Pointer: "a/b"}); !errors.As(err, &appErr) || appErr.Status != 403 {
 		t.Errorf("member add resource error = %v, want 403", err)
 	}
 
-	if _, err := svc.AddResource(context.Background(), "u1", p.ID, "github_repo", "r", "a/b"); err != nil {
+	if _, err := svc.AddResource(context.Background(), "u1", p.ID, AddResourceInput{Type: "github_repo", Label: "r", Pointer: "a/b"}); err != nil {
 		t.Fatalf("first add: %v", err)
 	}
-	if _, err := svc.AddResource(context.Background(), "u1", p.ID, "github_repo", "r2", "a/b"); !errors.As(err, &appErr) || appErr.Status != 409 {
+	if _, err := svc.AddResource(context.Background(), "u1", p.ID, AddResourceInput{Type: "github_repo", Label: "r2", Pointer: "a/b"}); !errors.As(err, &appErr) || appErr.Status != 409 {
 		t.Errorf("duplicate add error = %v, want 409", err)
 	}
 }
@@ -459,7 +460,7 @@ func TestListAndRemoveResources(t *testing.T) {
 	if err := projects.AddProjectMember(context.Background(), p.ID, "mate", "member"); err != nil {
 		t.Fatalf("add member: %v", err)
 	}
-	r, err := svc.AddResource(context.Background(), "u1", p.ID, "github_repo", "repo", "a/b")
+	r, err := svc.AddResource(context.Background(), "u1", p.ID, AddResourceInput{Type: "github_repo", Label: "repo", Pointer: "a/b"})
 	if err != nil {
 		t.Fatalf("add resource: %v", err)
 	}

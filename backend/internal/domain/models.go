@@ -43,14 +43,19 @@ type ProjectMember struct {
 }
 
 // ProjectResource binds an external resource to a project. Type is
-// "github_repo" or "local_directory"; Pointer is the canonical locator
-// (e.g. "owner/repo" or an absolute path).
+// "github_repo", "local_directory" or "worktree"; Pointer is the
+// canonical locator (e.g. "owner/repo", an absolute path, or — for a
+// worktree — the base repository checkout). Branch and Path are only
+// meaningful for worktree bindings: the worktree for Branch lives at
+// Path, created from the base checkout when the binding is added.
 type ProjectResource struct {
 	ID        string
 	ProjectID string
 	Type      string
 	Label     string
 	Pointer   string
+	Branch    string
+	Path      string
 	CreatedAt time.Time
 }
 

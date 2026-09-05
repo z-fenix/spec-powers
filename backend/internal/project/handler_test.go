@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -286,6 +287,40 @@ func TestAddResourceHandlerValidatesPointer(t *testing.T) {
 	}
 
 	addResourceOK(t, h, id, ownerTok)
+}
+
+func TestAddResourceWorktreeHandler(t *testing.T) {
+	projects := newFakeProjects()
+	users := newFakeUsers()
+	svc := NewService(projects, users, newFakeMembers(), &fakeWorkspaces{})
+	svc.ensureWorktree = func(base, path, branch string) error { return nil }
+	tokens := auth.NewTokenService("test-secret", 15*time.Minute)
+	h := NewHandler(svc, tokens, nil).Routes()
+	ti := &TokenIssuer{tokens: tokens}
+	id, ownerTok, _ := setupProject(t, h, ti, users)
+
+	w := authedRequest(t, h, http.MethodPost, "/"+id+"/resources", ownerTok,
+		map[string]string{"type": "worktree", "label": "wt", "pointer": "/repos/demo", "branch": "feature", "path": "/repos/demo-wt"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("worktree add: status = %d, body=%s", w.Code, w.Body.String())
+	}
+	for _, want := range []string{`"type":"worktree"`, `"branch":"feature"`, `"path":"/repos/demo-wt"`} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Errorf("response missing %s: %s", want, w.Body.String())
+		}
+	}
+
+	// A worktree whose provisioning fails is rejected with 400.
+	svc2Users := newFakeUsers()
+	svc2 := NewService(newFakeProjects(), svc2Users, newFakeMembers(), &fakeWorkspaces{})
+	svc2.ensureWorktree = func(base, path, branch string) error { return errors.New("no repo") }
+	h2 := NewHandler(svc2, tokens, nil).Routes()
+	id2, ownerTok2, _ := setupProject(t, h2, ti, svc2Users)
+	w = authedRequest(t, h2, http.MethodPost, "/"+id2+"/resources", ownerTok2,
+		map[string]string{"type": "worktree", "label": "wt", "pointer": "/repos/demo", "branch": "feature", "path": "/repos/demo-wt"})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("failed provisioning: status = %d, want 400", w.Code)
+	}
 }
 
 func TestListResourcesHandler(t *testing.T) {

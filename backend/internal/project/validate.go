@@ -8,16 +8,17 @@ import (
 )
 
 const (
-	ResourceTypeGitHubRepo    = "github_repo"
+	ResourceTypeGitHubRepo     = "github_repo"
 	ResourceTypeLocalDirectory = "local_directory"
+	ResourceTypeWorktree       = "worktree"
 )
 
 // validateResource checks the resource type, a non-empty label, and the
 // pointer format for the type. Hosted-platform pointers validate through
 // their registered platform provider.
 func validateResource(resourceType, label, pointer string) error {
-	if resourceType != ResourceTypeGitHubRepo && resourceType != ResourceTypeLocalDirectory {
-		return httpapi.ErrInvalid("resource type must be github_repo or local_directory")
+	if resourceType != ResourceTypeGitHubRepo && resourceType != ResourceTypeLocalDirectory && resourceType != ResourceTypeWorktree {
+		return httpapi.ErrInvalid("resource type must be github_repo, local_directory or worktree")
 	}
 	if strings.TrimSpace(label) == "" {
 		return httpapi.ErrInvalid("resource label is required")
@@ -31,9 +32,9 @@ func validateResource(resourceType, label, pointer string) error {
 		if err := p.ValidatePointer(pointer); err != nil {
 			return httpapi.ErrInvalid("invalid github_repo pointer: " + err.Error())
 		}
-	case ResourceTypeLocalDirectory:
+	case ResourceTypeLocalDirectory, ResourceTypeWorktree:
 		if !validLocalDirPointer(pointer) {
-			return httpapi.ErrInvalid("invalid local_directory pointer (want an absolute path without '..' segments)")
+			return httpapi.ErrInvalid("invalid pointer (want an absolute path without '..' segments)")
 		}
 	}
 	return nil

@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 
 	"specpowers/backend/internal/domain"
@@ -14,10 +15,19 @@ type Service struct {
 	users      store.UserStore
 	members    store.MemberStore
 	workspaces store.WorkspaceStore
+	// ensureWorktree provisions (or reuses) the worktree for worktree
+	// bindings; a field so tests can stub the git interaction.
+	ensureWorktree func(base, path, branch string) error
 }
 
 func NewService(projects store.ProjectStore, users store.UserStore, members store.MemberStore, workspaces store.WorkspaceStore) *Service {
-	return &Service{projects: projects, users: users, members: members, workspaces: workspaces}
+	return &Service{
+		projects:       projects,
+		users:          users,
+		members:        members,
+		workspaces:     workspaces,
+		ensureWorktree: EnsureWorktree,
+	}
 }
 
 func (s *Service) CreateProject(ctx context.Context, userID, name, description string) (*domain.Project, error) {
@@ -143,16 +153,52 @@ func (s *Service) SetArchived(ctx context.Context, userID, projectID string, arc
 	return p, nil
 }
 
+// AddResourceInput describes one resource binding. Branch and Path are
+// only meaningful for worktree bindings: Pointer is the base repository
+// checkout, Path is where the worktree for Branch lives.
+type AddResourceInput struct {
+	Type    string
+	Label   string
+	Pointer string
+	Branch  string
+	Path    string
+}
+
 // AddResource binds a validated resource to a project. Owner only; a
-// duplicate (type, pointer) pair conflicts with 409.
-func (s *Service) AddResource(ctx context.Context, userID, projectID, resourceType, label, pointer string) (*domain.ProjectResource, error) {
+// duplicate (type, pointer) pair conflicts with 409. Worktree bindings
+// provision the worktree first (or reuse an existing one) and fail the
+// request when that is impossible.
+func (s *Service) AddResource(ctx context.Context, userID, projectID string, in AddResourceInput) (*domain.ProjectResource, error) {
 	if err := s.RequireProjectRole(ctx, userID, projectID, "owner"); err != nil {
 		return nil, err
 	}
-	if err := validateResource(resourceType, label, pointer); err != nil {
+	if err := validateResource(in.Type, in.Label, in.Pointer); err != nil {
 		return nil, err
 	}
-	r, err := s.projects.AddProjectResource(ctx, projectID, resourceType, label, pointer)
+	branch, path := in.Branch, in.Path
+	if in.Type == ResourceTypeWorktree {
+		if !validLocalDirPointer(path) {
+			return nil, httpapi.ErrInvalid("invalid worktree path (want an absolute path without '..' segments)")
+		}
+		if err := validWorktreeBranch(branch); err != nil {
+			return nil, httpapi.ErrInvalid("invalid worktree branch: " + err.Error())
+		}
+		if filepath.Clean(path) == filepath.Clean(in.Pointer) {
+			return nil, httpapi.ErrInvalid("worktree path must differ from the base repository")
+		}
+		if err := s.ensureWorktree(in.Pointer, path, branch); err != nil {
+			return nil, httpapi.ErrInvalid("ensure worktree failed: " + err.Error())
+		}
+	} else {
+		branch, path = "", ""
+	}
+	r, err := s.projects.AddProjectResource(ctx, projectID, store.ResourceInput{
+		Type:    in.Type,
+		Label:   in.Label,
+		Pointer: in.Pointer,
+		Branch:  branch,
+		Path:    path,
+	})
 	if err == store.ErrConflict {
 		return nil, httpapi.ErrConflict("resource already bound to project")
 	}

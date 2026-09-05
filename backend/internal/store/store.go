@@ -105,6 +105,21 @@ type IssueMetadataStore interface {
 	DeleteIssueMetadata(ctx context.Context, issueID, key string) error
 }
 
+// PropertyStore covers project-level custom property definitions and the
+// per-issue values assigned to them. SetIssueProperty is an upsert on
+// (issue_id, property_id); deleting a definition cascades to its values.
+type PropertyStore interface {
+	CreatePropertyDefinition(ctx context.Context, d *domain.PropertyDefinition) (*domain.PropertyDefinition, error)
+	GetPropertyDefinition(ctx context.Context, id string) (*domain.PropertyDefinition, error)
+	ListPropertyDefinitions(ctx context.Context, projectID string) ([]domain.PropertyDefinition, error)
+	UpdatePropertyDefinition(ctx context.Context, d *domain.PropertyDefinition) (*domain.PropertyDefinition, error)
+	DeletePropertyDefinition(ctx context.Context, id string) error
+	SetIssueProperty(ctx context.Context, v *domain.IssuePropertyValue) (*domain.IssuePropertyValue, error)
+	ListIssueProperties(ctx context.Context, issueID string) ([]domain.IssuePropertyValue, error)
+	ListIssuePropertiesForProject(ctx context.Context, projectID string) ([]domain.IssuePropertyValue, error)
+	DeleteIssueProperty(ctx context.Context, issueID, propertyID string) error
+}
+
 type AgentStore interface {
 	CreateAgent(ctx context.Context, a *domain.Agent) (*domain.Agent, error)
 	GetAgent(ctx context.Context, id string) (*domain.Agent, error)

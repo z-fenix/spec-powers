@@ -82,6 +82,30 @@ type Issue struct {
 	UpdatedAt   time.Time
 }
 
+// PropertyDefinition is a project-level custom property. Type is one of
+// "select", "multi_select", "checkbox", "text", "number" or "date"; Options
+// holds the allowed values for select / multi_select (empty for the others).
+type PropertyDefinition struct {
+	ID        string
+	ProjectID string
+	Name      string
+	Type      string
+	Options   []string
+	Position  int
+	CreatedAt time.Time
+}
+
+// IssuePropertyValue is the value one issue carries for one property
+// definition. Value is the canonical string form: plain text, a number
+// literal, "true"/"false", "YYYY-MM-DD", a select option, or a JSON array of
+// select options for multi_select.
+type IssuePropertyValue struct {
+	IssueID    string
+	PropertyID string
+	Value      string
+	UpdatedAt  time.Time
+}
+
 // IssueEvent is one timeline entry of an issue: a field (or status/assignee)
 // change. Field "created" marks the issue's creation. ActorID is the user who
 // made the change; empty values mean "unset" (e.g. unassigned).
